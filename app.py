@@ -10,29 +10,60 @@ from datetime import datetime
 # Configuração da Página
 st.set_page_config(page_title="People Analytics - Assistente de Suporte", layout="wide", initial_sidebar_state="expanded")
 
-# --- ESTILOS CSS (Design Corporativo Limpo) ---
+# --- ESTILOS CSS (Design Dashboard & Índice) ---
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
-        html, body, [class*="css"]  { font-family: 'Roboto', sans-serif; color: #2c3e50; }
+        html, body, [class*="css"]  { font-family: 'Roboto', sans-serif; color: #e0e0e0; background-color: #0e1117; }
         
-        /* Ajuste de espaçamento */
-        .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+        /* Remover padding excessivo do topo */
+        .block-container { padding-top: 1rem; padding-bottom: 5rem; }
 
-        /* Cards de Métricas */
-        div.metric-container {
-            background-color: #ffffff; border-left: 5px solid #2c3e50; padding: 15px;
-            border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        /* Estilo do Índice Lateral (Colab Style) */
+        [data-testid="stSidebar"] {
+            background-color: #161b22;
+            border-right: 1px solid #30363d;
         }
-        label.metric-label { font-size: 0.85rem !important; color: #7f8c8d !important; text-transform: uppercase; letter-spacing: 1px; }
-        div.metric-value { font-size: 1.8rem !important; color: #2c3e50 !important; font-weight: 700; }
+        .toc-header {
+            font-size: 1.5rem; font-weight: 700; color: #f0f6fc; margin-bottom: 1rem;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .toc-link {
+            display: block; padding: 8px 0; color: #8b949e; text-decoration: none;
+            font-size: 0.95rem; transition: color 0.2s;
+        }
+        .toc-link:hover { color: #58a6ff; }
+        .toc-active { color: #f0f6fc; font-weight: 500; border-left: 2px solid #58a6ff; padding-left: 10px; }
         
-        /* Títulos e Âncoras */
-        h1, h2, h3 { color: #2c3e50; font-weight: 700; }
+        /* Cards de Conteúdo (Quadro Transparente/Glassmorphism) */
+        .dashboard-card {
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(5px);
+        }
         
-        /* Links do Índice Lateral */
-        a.toc-link { color: #34495e; text-decoration: none; font-size: 0.95rem; display: block; padding: 5px 0; }
-        a.toc-link:hover { color: #2980b9; font-weight: bold; }
+        /* Títulos dentro dos cards */
+        .card-title {
+            color: #58a6ff; font-size: 1.1rem; font-weight: 600; margin-bottom: 10px;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        
+        /* Texto corrido */
+        .card-text { font-size: 0.95rem; line-height: 1.6; color: #c9d1d9; }
+        
+        /* Métricas */
+        div.metric-container {
+            background-color: #0d1117; border: 1px solid #30363d; padding: 15px;
+            border-radius: 6px; text-align: center;
+        }
+        label.metric-label { font-size: 0.8rem !important; color: #8b949e !important; text-transform: uppercase; }
+        div.metric-value { font-size: 1.6rem !important; color: #f0f6fc !important; font-weight: 700; }
+
+        /* Separadores */
+        hr { border-color: #30363d; margin: 30px 0; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -61,18 +92,28 @@ def load_data():
 
 df_func, df_perf, df_sal = load_data()
 
-# --- ÍNDICE LATERAL (Manual) ---
-st.sidebar.markdown("### Índice")
+# --- ÍNDICE LATERAL (ESTILO COLAB) ---
 st.sidebar.markdown("""
-- [Premissas & Metodologia](#premissas-metodologia)
-- [Dashboard de Decisão](#dashboard-de-decisao)
-- [Lista Final & Insights](#lista-final-insights)
+<div class="toc-header">
+    Índice 
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3zM3 9h18M9 21V9"/></svg>
+</div>
+<div style="margin-left: 5px;">
+    <a href="#premissas" class="toc-link">1. Premissas & Metodologia</a>
+    <a href="#dashboard" class="toc-link">2. Dashboard de Performance</a>
+    <a href="#insights" class="toc-link">3. Insights Gerenciais</a>
+</div>
+<div style="margin-top: 30px; font-size: 0.8rem; color: #484f58;">
+    © 2025 People Analytics
+</div>
 """, unsafe_allow_html=True)
-
 
 if df_func is not None and not df_func.empty and not df_perf.empty:
 
-    # --- PROCESSAMENTO DOS DADOS ---
+    # --- PROCESSAMENTO (VALORES FIXOS: FIT 8.0, BUDGET 3000) ---
+    FIT_CORTE = 8.0
+    BUDGET_TOTAL = 3000.0
+
     df_func['matricula'] = df_func['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     df_perf['matricula'] = df_perf['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     df = pd.merge(df_func, df_perf, on='matricula', how='inner')
@@ -116,7 +157,6 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
             df_elegiveis[col] = df_elegiveis[col].astype(str).str.replace(',', '.')
             df_elegiveis[col] = pd.to_numeric(df_elegiveis[col], errors='coerce').fillna(0)
 
-    # Cálculo Scores (Fórmula Nelogica)
     max_tarefas = df_elegiveis['tarefas'].max()
     if max_tarefas == 0: max_tarefas = 1
     df_elegiveis['nota_produtividade'] = (df_elegiveis['tarefas'] / max_tarefas) * 10
@@ -134,88 +174,94 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                                     (df_elegiveis['avaliacao_gestor'] * 0.20) + \
                                     (df_elegiveis['nota_eficiencia'] * 0.20)
 
-    # --- SEÇÃO 1: TÍTULO E PREMISSAS ---
-    st.title("People Analytics - Assistente de Suporte")
-    
-    st.header("Premissas & Metodologia", anchor="premissas-metodologia")
-    st.info("Este painel utiliza um algoritmo de decisão multicritério para garantir promoções meritocráticas, transparentes e alinhadas à cultura.")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("1. Critérios de Elegibilidade")
-        st.markdown("""
-        * **Fit Cultural >= 8.0:** Obrigatório. Alinhamento aos valores da empresa.
-        * **Tempo de Casa >= 12 Meses:** Maturação necessária para o próximo nível.
-        """)
-    
-    with col2:
-        st.subheader("2. Algoritmo de Performance")
-        st.markdown("Score Final (0 a 10) composto por:")
-        st.markdown("""
-        * **30% Produtividade (Volume):** Normalizado pelo máximo do time.
-        * **30% Qualidade (CSAT):** Foco na experiência do cliente.
-        * **20% Eficiência (Zero Erros):** Penaliza a reincidência.
-        * **20% Avaliação do Gestor:** Soft skills e liderança.
-        """)
-    
-    st.markdown("---")
-
-    # --- SEÇÃO 2: DASHBOARD (COM CONTROLES EMBUTIDOS) ---
-    st.header("Dashboard de Decisão", anchor="dashboard-de-decisao")
-    
-    # Controles dentro da página (Expander para não poluir)
-    with st.expander("Configurações do Cenário (Budget e Filtros)", expanded=True):
-        c1, c2 = st.columns(2)
-        budget_total = c1.number_input("Budget Disponível (R$)", value=3000.0, step=100.0)
-        fit_corte = c2.slider("Régua Fit Cultural", 8.0, 10.0, 8.0)
-
-    # Lógica de Seleção
     mask_promocao = (
-        (df_elegiveis['fit_cultural'] >= fit_corte) & 
+        (df_elegiveis['fit_cultural'] >= FIT_CORTE) & 
         (df_elegiveis['Meses_Casa'] >= 12)
     )
     candidatos = df_elegiveis[mask_promocao].copy().sort_values(by='Score_Tecnico', ascending=False)
     candidatos['Custo_Acumulado'] = candidatos['Custo_Aumento'].cumsum()
-    promovidos = candidatos[candidatos['Custo_Acumulado'] <= budget_total].copy()
+    promovidos = candidatos[candidatos['Custo_Acumulado'] <= BUDGET_TOTAL].copy()
     
     df_elegiveis['Status'] = 'Não Elegível'
     df_elegiveis.loc[mask_promocao, 'Status'] = 'Elegível (Sem Budget)' 
     df_elegiveis.loc[df_elegiveis['Meses_Casa'] < 12, 'Status'] = 'Em Maturação (<12m)'
     df_elegiveis.loc[df_elegiveis['matricula'].isin(promovidos['matricula']), 'Status'] = 'PROMOVIDO'
 
+    # --- CORPO DO DASHBOARD ---
+    
+    st.title("People Analytics | Matriz de Decisão")
+    
+    # SEÇÃO 1: PREMISSAS (EM CARD)
+    st.markdown('<div id="premissas"></div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="dashboard-card">
+        <div class="card-title">1. Premissas & Metodologia</div>
+        <div class="card-text">
+            Este modelo utiliza um algoritmo multicritério para garantir meritocracia.
+            <br><br>
+            <strong>Critérios de Corte (Gatekeepers):</strong><br>
+            • <strong>Fit Cultural ≥ 8.0:</strong> Obrigatório para garantir alinhamento aos valores.<br>
+            • <strong>Tempo de Casa ≥ 12 Meses:</strong> Maturação necessária para o cargo.
+            <br><br>
+            <strong>Composição do Score Técnico (0-10):</strong><br>
+            • <strong>30% Produtividade:</strong> Volume de tarefas (normalizado pelo máximo do time).<br>
+            • <strong>30% Qualidade:</strong> Satisfação do cliente (CSAT).<br>
+            • <strong>20% Eficiência:</strong> Baixa taxa de reincidência.<br>
+            • <strong>20% Avaliação Gestor:</strong> Soft skills e comportamento.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # SEÇÃO 2: DASHBOARD (GRÁFICO + TABELA)
+    st.markdown('<div id="dashboard"></div>', unsafe_allow_html=True)
+    
     # KPIs
     kpi1, kpi2, kpi3 = st.columns(3)
-    uso_budget = (promovidos['Custo_Aumento'].sum() / budget_total * 100) if budget_total > 0 else 0
+    uso_budget = (promovidos['Custo_Aumento'].sum() / BUDGET_TOTAL * 100) if BUDGET_TOTAL > 0 else 0
     
-    kpi1.markdown(f'<div class="metric-container"><label class="metric-label">Colaboradores Promovidos</label><div class="metric-value">{len(promovidos)}</div></div>', unsafe_allow_html=True)
-    kpi2.markdown(f'<div class="metric-container"><label class="metric-label">Investimento Total</label><div class="metric-value">R$ {promovidos["Custo_Aumento"].sum():.2f}</div></div>', unsafe_allow_html=True)
-    kpi3.markdown(f'<div class="metric-container"><label class="metric-label">Uso do Budget</label><div class="metric-value">{uso_budget:.1f}%</div></div>', unsafe_allow_html=True)
+    kpi1.markdown(f'<div class="metric-container"><label class="metric-label">Promovidos</label><div class="metric-value">{len(promovidos)}</div></div>', unsafe_allow_html=True)
+    kpi2.markdown(f'<div class="metric-container"><label class="metric-label">Investimento</label><div class="metric-value">R$ {promovidos["Custo_Aumento"].sum():.2f}</div></div>', unsafe_allow_html=True)
+    kpi3.markdown(f'<div class="metric-container"><label class="metric-label">Budget Utilizado</label><div class="metric-value">{uso_budget:.1f}%</div></div>', unsafe_allow_html=True)
     
-    st.write("") # Espaçamento
+    st.write("")
 
-    # Gráfico
-    col_chart, col_table = st.columns([1.8, 1])
+    col_chart, col_table = st.columns([1.6, 1])
     
     with col_chart:
-        st.markdown("##### Matriz de Performance x Cultura")
+        st.markdown("##### Performance x Cultura")
         fig, ax = plt.subplots(figsize=(10, 6))
-        sns.set_style("whitegrid")
+        # Ajustando tema escuro para o gráfico combinar com o dashboard
+        fig.patch.set_facecolor('#0e1117')
+        ax.set_facecolor('#0e1117')
         
+        # Cores customizadas para tema escuro
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
-                        x='Score_Tecnico', y='fit_cultural', color='#95a5a6', alpha=0.4, s=60, label='Outros', ax=ax)
+                        x='Score_Tecnico', y='fit_cultural', color='#30363d', alpha=0.6, s=60, label='Outros', ax=ax)
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
-                        x='Score_Tecnico', y='fit_cultural', color='#f39c12', alpha=0.6, s=80, marker='X', label='< 12 Meses', ax=ax)
+                        x='Score_Tecnico', y='fit_cultural', color='#d29922', alpha=0.7, s=80, marker='X', label='< 12 Meses', ax=ax)
         
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
-                            color='#2ecc71', s=150, edgecolor='#27ae60', label='Promovidos', ax=ax)
+                            color='#238636', s=150, edgecolor='#f0f6fc', linewidth=1.5, label='Promovidos', ax=ax)
             for line in range(0, promovidos.shape[0]):
-                ax.text(promovidos.Score_Tecnico.iloc[line]+0.05, promovidos.fit_cultural.iloc[line], 
-                        f"ID {promovidos.matricula.iloc[line]}", horizontalalignment='left', size='small', color='black', weight='bold')
-            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='#3498db', linestyle='--', alpha=0.5, label='Corte Dinâmico')
+                ax.text(promovidos.Score_Tecnico.iloc[line]+0.08, promovidos.fit_cultural.iloc[line], 
+                        f"ID {promovidos.matricula.iloc[line]}", horizontalalignment='left', size='small', color='#f0f6fc', weight='bold')
+            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='#1f6feb', linestyle='--', alpha=0.6, label='Corte Dinâmico')
 
-        ax.axhline(y=fit_corte, color='#e74c3c', linestyle='--', alpha=0.5, label=f'Régua Fit ({fit_corte})')
-        ax.legend(loc='lower left', frameon=True)
+        ax.axhline(y=FIT_CORTE, color='#da3633', linestyle='--', alpha=0.6, label=f'Régua Fit ({FIT_CORTE})')
+        
+        # Ajuste de eixos para tema escuro
+        ax.tick_params(colors='#8b949e')
+        ax.xaxis.label.set_color('#8b949e')
+        ax.yaxis.label.set_color('#8b949e')
+        ax.spines['bottom'].set_color('#30363d')
+        ax.spines['top'].set_color('#30363d') 
+        ax.spines['right'].set_color('#30363d')
+        ax.spines['left'].set_color('#30363d')
+
+        legend = ax.legend(loc='lower left', frameon=True, facecolor='#161b22', edgecolor='#30363d')
+        plt.setp(legend.get_texts(), color='#8b949e')
+        
         ax.set_xlabel("Score Técnico")
         ax.set_ylabel("Fit Cultural")
         st.pyplot(fig, use_container_width=True)
@@ -224,18 +270,14 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         st.markdown("##### Lista Final")
         if not promovidos.empty:
             st.dataframe(
-                promovidos[['matricula', 'Proximo_Nivel', 'Score_Tecnico', 'tarefas']].rename(columns={'tarefas': 'Vol.', 'Proximo_Nivel': 'Cargo Novo'})
-                .style.format({'Score_Tecnico': '{:.2f}', 'Vol.': '{:.0f}'})
-                .background_gradient(subset=['Score_Tecnico'], cmap='Greens'),
+                promovidos[['matricula', 'Proximo_Nivel', 'Score_Tecnico', 'tarefas']].rename(columns={'tarefas': 'Vol.', 'Proximo_Nivel': 'Novo Cargo'}),
                 use_container_width=True, height=400, hide_index=True
             )
         else:
-            st.warning("Nenhum colaborador atingiu os critérios.")
+            st.warning("Nenhum colaborador elegível.")
 
-    st.markdown("---")
-
-    # --- SEÇÃO 3: INSIGHTS ---
-    st.header("Lista Final & Insights", anchor="lista-final-insights")
+    # SEÇÃO 3: INSIGHTS (EM CARD)
+    st.markdown('<div id="insights"></div>', unsafe_allow_html=True)
     
     if not promovidos.empty:
         top_performer = promovidos.iloc[0]
@@ -243,24 +285,19 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         avg_score_geral = df_elegiveis['Score_Tecnico'].mean()
         
         st.markdown(f"""
-        **Análise das Promoções**
-        
-        Com base nos critérios estabelecidos, selecionamos **{len(promovidos)} colaboradores** que combinam alta entrega técnica e forte alinhamento cultural.
-        
-        **Destaque do Ciclo: Colaborador {top_performer['matricula']}**
-        O colaborador de matrícula **{top_performer['matricula']}** obteve a maior pontuação global (**{top_performer['Score_Tecnico']:.2f}**).
-        * Volume: Entregou **{top_performer['tarefas']:.0f}** tarefas.
-        * Eficiência: Apresentou uma taxa de reincidência de apenas **{top_performer['reincidencia']:.2f}%**.
-        
-        **Elevação da Barra**
-        * A média de Score Técnico dos promovidos foi de **{avg_score_prom:.2f}**.
-        * Isso representa um desempenho **{((avg_score_prom/avg_score_geral)-1)*100:.1f}% superior** à média geral da equipe ({avg_score_geral:.2f}).
-        
-        **Pontos de Atenção (Maturação)**
-        Identificamos **{len(df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'])} colaboradores** com alto potencial (Fit e Técnica), mas que foram retidos pela regra de 12 meses de casa. Recomenda-se feedback de retenção para estes talentos (pontos laranja no gráfico).
-        """)
-    else:
-        st.info("Não há dados suficientes de promoções para gerar insights neste cenário.")
+        <div class="dashboard-card">
+            <div class="card-title">3. Insights Gerenciais</div>
+            <div class="card-text">
+                Com base nos dados processados:<br><br>
+                <strong>🏆 Destaque do Ciclo: Colaborador {top_performer['matricula']}</strong><br>
+                Atingiu o maior Score Global (<strong>{top_performer['Score_Tecnico']:.2f}</strong>), combinando um volume alto de <strong>{top_performer['tarefas']:.0f} tarefas</strong> com uma taxa de erro mínima (<strong>{top_performer['reincidencia']:.2f}%</strong>).<br><br>
+                <strong>📈 Elevação da Barra Técnica</strong><br>
+                O grupo de promovidos performa <strong>{((avg_score_prom/avg_score_geral)-1)*100:.1f}% acima</strong> da média geral da equipe.<br><br>
+                <strong>⚠️ Pipeline de Talentos</strong><br>
+                Existem <strong>{len(df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'])} colaboradores</strong> com performance de promoção, mas retidos pelo tempo de casa (pontos amarelos no gráfico). Acompanhar para o próximo ciclo.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 else:
     st.info("Carregando dados da API...")
