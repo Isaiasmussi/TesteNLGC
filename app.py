@@ -8,7 +8,7 @@ import requests
 
 st.set_page_config(page_title="Executive Dashboard - Nelogica Case", layout="wide", initial_sidebar_state="collapsed")
 
-# Estilos CSS
+# --- ESTILIZAÇÃO CSS ---
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
@@ -22,6 +22,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- CARREGAMENTO DE DADOS ---
 @st.cache_data(ttl=600)
 def load_data_from_api():
     api_url = "https://script.google.com/macros/s/AKfycbxHG51T-YJi8XpY1ZFmJ-YvNHO_OLxNA6TGp6BnUY_R539HsQW7bVpEth23TShRdqV1/exec"
@@ -30,24 +31,23 @@ def load_data_from_api():
         response.raise_for_status()
         data = response.json()
         
+        # Função auxiliar para achar chaves ignorando maiúsculas/minúsculas
         def get_df(data_dict, keys):
             for k in keys:
                 if k in data_dict: return pd.DataFrame(data_dict[k])
             return pd.DataFrame()
 
-        df_func = get_df(data, ['funcionarios', 'Funcionário'])
+        df_func = get_df(data, ['funcionarios', 'Funcionário', 'Funcionario'])
         df_perf = get_df(data, ['performance', 'Performance'])
         df_sal = get_df(data, ['salarios', 'tabela_salarial', 'Tabela Salarial'])
 
-        # Limpeza de chaves e tipos para garantir o merge
-        if 'matricula' in df_func.columns:
-            df_func['matricula'] = pd.to_numeric(df_func['matricula'], errors='coerce')
-        if 'matricula' in df_perf.columns:
-            df_perf['matricula'] = pd.to_numeric(df_perf['matricula'], errors='coerce')
-
         if df_func.empty or df_perf.empty: return None, None
+
+        # Converter matrículas para garantir o merge
+        for d in [df_func, df_perf]:
+            if 'matricula' in d.columns:
+                d['matricula'] = pd.to_numeric(d['matricula'], errors='coerce')
         
-        # Merge das bases (conforme seu código)
         df = pd.merge(df_func, df_perf, on='matricula', how='inner')
         return df, df_sal
 
@@ -59,7 +59,7 @@ df, df_sal = load_data_from_api()
 
 if df is not None and not df.empty:
     
-    # --- 2. ENGENHARIA DE SALÁRIOS (Lógica do seu código) ---
+    # --- 2. ENGENHARIA DE SALÁRIOS ---
     if not df_sal.empty:
         df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
         df_sal_map = df_sal.set_index('Nível de Cargo')['Valor'].to_dict()
@@ -72,129 +72,122 @@ if df is not None and not df.empty:
     else:
         df['Custo_Aumento'] = 0
 
-    # Remover quem já está no teto ou sem custo definido
+    # Filtra elegíveis (quem tem aumento calculado)
     df_elegiveis = df.dropna(subset=['Custo_Aumento']).copy()
 
-    # --- 3. ENGENHARIA DO SCORE TÉCNICO ---
-    # Limpeza prévia para evitar TypeError (garante que tudo é float antes de contas)
-    cols_check = ['tarefas', 'qualidade', 'reincidencia', 'fit_cultural']
-    for col in cols_check:
-        if col in df_elegiveis.columns:
-            # Trata vírgulas se vierem do sheets e converte para numérico
-            if df_elegiveis[col].dtype == 'object':
-                df_elegiveis[col] = df_elegiveis[col].astype(str).str.replace(',', '.')
+    # --- 3. SANITIZAÇÃO DE DADOS (CRUCIAL PARA CORRIGIR O ERRO) ---
+    # Colunas que serão usadas no cálculo matemático
+    cols_math = ['tarefas', 'qualidade', 'reincidencia', 'fit_cultural']
+    
+    # Verifica se as colunas existem, se não, cria com 0
+    for col in cols_math:
+        if col not in df_elegiveis.columns:
+            df_elegiveis[col] = 0
+        else:
+            # 1. Converte para string
+            # 2. Troca vírgula por ponto (caso venha "9,5")
+            # 3. Força conversão para número (coerce transforma erros em NaN)
+            # 4. Preenche NaN com 0
+            df_elegiveis[col] = df_elegiveis[col].astype(str).str.replace(',', '.')
             df_elegiveis[col] = pd.to_numeric(df_elegiveis[col], errors='coerce').fillna(0)
 
-    # Inverter reincidência (conforme sua lógica: 1 - reincidencia)
+    # --- 4. CÁLCULO DO SCORE TÉCNICO ---
+    # Inverter reincidência (1 - valor). Como já garantimos que é número acima, não dará erro.
     df_elegiveis['reincidencia_score'] = 1 - df_elegiveis['reincidencia']
 
-    # Normalização MinMaxScaler (0 a 10)
+    # Normalização
     scaler = MinMaxScaler(feature_range=(0, 10))
     cols_norm = ['tarefas', 'qualidade', 'reincidencia_score']
     
-    # Cria colunas normalizadas com sufixo _n
-    dados_norm = scaler.fit_transform(df_elegiveis[cols_norm])
-    df_norm = pd.DataFrame(dados_norm, columns=[c+'_n' for c in cols_norm], index=df_elegiveis.index)
-    df_elegiveis = pd.concat([df_elegiveis, df_norm], axis=1)
+    # Garante mais uma vez que não há NaNs antes de passar pro Scikit-Learn
+    df_elegiveis[cols_norm] = df_elegiveis[cols_norm].fillna(0)
+    
+    try:
+        dados_norm = scaler.fit_transform(df_elegiveis[cols_norm])
+        df_norm = pd.DataFrame(dados_norm, columns=[c+'_n' for c in cols_norm], index=df_elegiveis.index)
+        df_elegiveis = pd.concat([df_elegiveis, df_norm], axis=1)
 
-    # Cálculo Score Técnico (Média Ponderada do seu código)
-    # 40% Qualidade, 30% Volume, 30% Baixa Reincidência
-    df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade_n'] * 0.4) + \
-                                    (df_elegiveis['tarefas_n'] * 0.3) + \
-                                    (df_elegiveis['reincidencia_score_n'] * 0.3)
+        # Cálculo Score Ponderado
+        df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade_n'] * 0.4) + \
+                                        (df_elegiveis['tarefas_n'] * 0.3) + \
+                                        (df_elegiveis['reincidencia_score_n'] * 0.3)
+    except Exception as e:
+        st.error(f"Erro crítico no cálculo do Score: {e}")
+        st.stop()
 
-    # --- SIDEBAR: CONTROLES ---
+    # --- SIDEBAR E FILTROS ---
     st.sidebar.header("Painel de Decisão")
-    budget_input = st.sidebar.number_input("Budget Disponível (R$)", value=3000.0, step=500.0)
-    fit_corte = st.sidebar.slider("Corte Fit Cultural", 0, 10, 8) # Padrão 8 conforme seu código
+    budget_input = st.sidebar.number_input("Budget Disponível (R$)", value=3000.0, step=100.0)
+    fit_corte = st.sidebar.slider("Corte Fit Cultural", 0, 10, 8)
 
-    # --- 4. REGRA DE NEGÓCIO: SELEÇÃO ---
-    # Filtro: Fit Cultural >= Corte (Padrão 8)
+    # --- 5. LÓGICA DE SELEÇÃO (FILTER & SORT) ---
     candidatos = df_elegiveis[df_elegiveis['fit_cultural'] >= fit_corte].copy()
-
-    # Ordenar pelo Score Técnico (Mérito)
     candidatos = candidatos.sort_values(by='Score_Tecnico', ascending=False)
-
-    # Seleção Orçamentária (Cumsum)
+    
     candidatos['Custo_Acumulado'] = candidatos['Custo_Aumento'].cumsum()
     promovidos = candidatos[candidatos['Custo_Acumulado'] <= budget_input].copy()
 
-    # Cria coluna de status para o gráfico
-    df_elegiveis['Status'] = 'Não Elegível (Fit Baixo)'
+    # Status para visualização
+    df_elegiveis['Status'] = 'Não Elegível'
     df_elegiveis.loc[df_elegiveis['fit_cultural'] >= fit_corte, 'Status'] = 'Elegível (Budget Insuficiente)'
     df_elegiveis.loc[df_elegiveis['matricula'].isin(promovidos['matricula']), 'Status'] = 'PROMOVIDO'
 
     # --- DASHBOARD ---
     st.markdown("### Alocação de Mérito (Regra: Fit Cultural + Score Técnico)")
+
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1.markdown(f'<div class="metric-container"><label class="metric-label">Promovidos</label><div class="metric-value">{len(promovidos)}</div></div>', unsafe_allow_html=True)
+    kpi2.markdown(f'<div class="metric-container"><label class="metric-label">Investimento</label><div class="metric-value">R$ {promovidos["Custo_Aumento"].sum():.2f}</div></div>', unsafe_allow_html=True)
     
-    col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
-    with col_kpi1:
-        st.markdown(f'<div class="metric-container"><label class="metric-label">Promovidos</label><div class="metric-value">{len(promovidos)}</div></div>', unsafe_allow_html=True)
-    with col_kpi2:
-        st.markdown(f'<div class="metric-container"><label class="metric-label">Investimento</label><div class="metric-value">R$ {promovidos["Custo_Aumento"].sum():.2f}</div></div>', unsafe_allow_html=True)
-    with col_kpi3:
-        perc_budget = (promovidos["Custo_Aumento"].sum() / budget_input * 100) if budget_input > 0 else 0
-        st.markdown(f'<div class="metric-container"><label class="metric-label">Uso do Budget</label><div class="metric-value">{perc_budget:.1f}%</div></div>', unsafe_allow_html=True)
-    with col_kpi4:
-        avg_score = promovidos['Score_Tecnico'].mean() if not promovidos.empty else 0
-        st.markdown(f'<div class="metric-container"><label class="metric-label">Média Score (Sel.)</label><div class="metric-value">{avg_score:.2f}</div></div>', unsafe_allow_html=True)
+    perc_budget = (promovidos["Custo_Aumento"].sum() / budget_input * 100) if budget_input > 0 else 0
+    kpi3.markdown(f'<div class="metric-container"><label class="metric-label">Uso do Budget</label><div class="metric-value">{perc_budget:.1f}%</div></div>', unsafe_allow_html=True)
+    
+    avg_score = promovidos['Score_Tecnico'].mean() if not promovidos.empty else 0
+    kpi4.markdown(f'<div class="metric-container"><label class="metric-label">Média Score (Sel.)</label><div class="metric-value">{avg_score:.2f}</div></div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
-    c1, c2 = st.columns([2, 1])
+    col_grafico, col_tabela = st.columns([2, 1])
 
-    with c1:
-        st.markdown("#### Matriz de Decisão: Fit Cultural x Performance Técnica")
+    with col_grafico:
+        st.markdown("#### Matriz de Decisão")
         if not df_elegiveis.empty:
             fig, ax = plt.subplots(figsize=(10, 6))
             sns.set_style("whitegrid")
-
-            # Plot Todos (Cinza)
+            
+            # Plot dos não promovidos
             sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] != 'PROMOVIDO'], 
                             x='Score_Tecnico', y='fit_cultural', 
-                            color='grey', alpha=0.3, s=80, label='Elegíveis / Outros', ax=ax)
-
-            # Plot Promovidos (Verde - destaque)
+                            color='grey', alpha=0.3, s=80, ax=ax)
+            
+            # Plot dos promovidos
             if not promovidos.empty:
                 sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
-                                color='#2ecc71', s=200, edgecolor='black', label='Promover (Top Pick)', ax=ax)
+                                color='#2ecc71', s=200, edgecolor='black', label='Promovidos', ax=ax)
                 
-                # Anotações dos IDs
                 for _, row in promovidos.iterrows():
                     ax.text(row['Score_Tecnico']+0.1, row['fit_cultural'], 
-                            f"ID {int(row['matricula'])}", 
-                            horizontalalignment='left', size='small', color='black', weight='semibold')
-                
-                # Linha vertical do corte técnico dinâmico (menor score entre os promovidos)
-                min_score_promo = promovidos['Score_Tecnico'].min()
-                ax.axvline(x=min_score_promo, color='b', linestyle='--', alpha=0.5, label=f'Corte Técnico ({min_score_promo:.2f})')
+                            f"ID {int(row['matricula'])}", fontsize=8, weight='bold')
 
-            # Linha de corte cultural
             ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Corte Cultural ({fit_corte})')
-
-            ax.set_xlabel('Score Técnico (Volume + Qualidade + Baixa Reincidência)', fontsize=11)
-            ax.set_ylabel('Fit Cultural (Avaliação Gestor)', fontsize=11)
-            ax.legend(loc='lower left')
+            ax.set_xlabel('Score Técnico Final')
+            ax.set_ylabel('Fit Cultural')
+            ax.legend()
             st.pyplot(fig)
 
-    with c2:
-        st.markdown("#### Lista Final de Promoção")
+    with col_tabela:
+        st.markdown("#### Lista Final")
         if not promovidos.empty:
             st.dataframe(
-                promovidos[['matricula', 'Nível de Cargo', 'Proximo_Nivel', 'Score_Tecnico', 'fit_cultural', 'Custo_Aumento']]
-                .style.format({
-                    'Score_Tecnico': '{:.2f}', 
-                    'fit_cultural': '{:.1f}',
-                    'Custo_Aumento': 'R$ {:.2f}',
-                    'matricula': '{:.0f}'
-                })
+                promovidos[['matricula', 'Nível de Cargo', 'Proximo_Nivel', 'Score_Tecnico', 'Custo_Aumento']]
+                .style.format({'Score_Tecnico': '{:.2f}', 'Custo_Aumento': 'R$ {:.2f}', 'matricula': '{:.0f}'})
                 .background_gradient(subset=['Score_Tecnico'], cmap='Greens'),
                 use_container_width=True,
                 height=400,
                 hide_index=True
             )
         else:
-            st.warning("Nenhum colaborador atende aos critérios com o budget atual.")
+            st.warning("Nenhum colaborador elegível.")
 
 else:
-    st.info("Carregando dados...")
+    st.info("Aguardando carregamento dos dados...")
