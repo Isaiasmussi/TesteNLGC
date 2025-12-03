@@ -3,23 +3,18 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.preprocessing import MinMaxScaler
 import requests
 from datetime import datetime
 
-# Configuração da Página
-st.set_page_config(page_title="People Analytics - Assistente de Suporte", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="People Analytics | Matriz de Decisão", layout="wide", initial_sidebar_state="expanded")
 
-# --- ESTILOS CSS (Design Dashboard & Índice) ---
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
         html, body, [class*="css"]  { font-family: 'Roboto', sans-serif; color: #e0e0e0; background-color: #0e1117; }
         
-        /* Remover padding excessivo do topo */
         .block-container { padding-top: 1rem; padding-bottom: 5rem; }
 
-        /* Estilo do Índice Lateral (Colab Style) */
         [data-testid="stSidebar"] {
             background-color: #161b22;
             border-right: 1px solid #30363d;
@@ -34,7 +29,6 @@ st.markdown("""
         }
         .toc-link:hover { color: #58a6ff; }
         
-        /* Cards de Conteúdo (Quadro Transparente/Glassmorphism) */
         .dashboard-card {
             background-color: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -44,7 +38,6 @@ st.markdown("""
             backdrop-filter: blur(5px);
         }
         
-        /* Mini Cards de Perfil (Sóbrio) */
         .profile-card {
             background-color: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -56,16 +49,13 @@ st.markdown("""
         .profile-id { color: #58a6ff; font-weight: bold; font-size: 1.1rem; }
         .profile-role { color: #8b949e; font-size: 0.85rem; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 0.5px;}
         
-        /* Títulos dentro dos cards */
         .card-title {
             color: #58a6ff; font-size: 1.1rem; font-weight: 600; margin-bottom: 10px;
             text-transform: uppercase; letter-spacing: 1px;
         }
         
-        /* Texto corrido */
         .card-text { font-size: 0.95rem; line-height: 1.6; color: #c9d1d9; }
         
-        /* Métricas */
         div.metric-container {
             background-color: #0d1117; border: 1px solid #30363d; padding: 15px;
             border-radius: 6px; text-align: center;
@@ -75,7 +65,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. CARREGAMENTO DE DADOS ---
 @st.cache_data(ttl=600)
 def load_data():
     api_url = "https://script.google.com/macros/s/AKfycbxHG51T-YJi8XpY1ZFmJ-YvNHO_OLxNA6TGp6BnUY_R539HsQW7bVpEth23TShRdqV1/exec"
@@ -95,16 +84,15 @@ def load_data():
 
         return df_func, df_perf, df_sal
     except Exception as e:
-        st.error(f"Erro na API: {e}")
+        st.error(f"Erro na comunicação com a API de Dados: {e}")
         return None, None, None
 
 df_func, df_perf, df_sal = load_data()
 
-# --- ÍNDICE LATERAL ---
+# Barra Lateral
 st.sidebar.markdown("""
 <div class="toc-header">
     Índice 
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3zM3 9h18M9 21V9"/></svg>
 </div>
 <div style="margin-left: 5px;">
     <a href="#premissas" class="toc-link">1. Premissas & Metodologia</a>
@@ -115,9 +103,8 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- SLIDER DE ORÇAMENTO (INTERATIVO) ---
 st.sidebar.markdown("---")
-st.sidebar.markdown("### ⚙️ Configurações")
+st.sidebar.markdown("### Configurações")
 BUDGET_TOTAL = st.sidebar.slider(
     "Orçamento Disponível (R$)", 
     min_value=1000.0, 
@@ -128,15 +115,13 @@ BUDGET_TOTAL = st.sidebar.slider(
 
 st.sidebar.markdown("""
 <div style="margin-top: 30px; font-size: 0.8rem; color: #484f58;">
-    © 2025 People Analytics
+    People Analytics © 2025
 </div>
 """, unsafe_allow_html=True)
 
 if df_func is not None and not df_func.empty and not df_perf.empty:
 
-    # --- PROCESSAMENTO ---
     FIT_CORTE = 8.0
-    # O Budget agora vem do Slider
 
     df_func['matricula'] = df_func['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     df_perf['matricula'] = df_perf['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
@@ -170,7 +155,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         df['Custo_Aumento'] = df['Salario_Novo'] - df['Salario_Atual']
         df_elegiveis = df.dropna(subset=['Custo_Aumento']).copy()
     else:
-        st.error("Erro nos dados salariais.")
+        st.error("Erro no processamento dos dados salariais.")
         st.stop()
 
     if df_elegiveis.empty: st.stop()
@@ -187,6 +172,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
 
     if df_elegiveis['reincidencia'].max() > 1.0:
         df_elegiveis['reincidencia'] = df_elegiveis['reincidencia'] / 100.0
+    
     df_elegiveis['nota_eficiencia'] = (1 - df_elegiveis['reincidencia']) * 10
     df_elegiveis['nota_eficiencia'] = df_elegiveis['nota_eficiencia'].clip(0, 10)
 
@@ -204,6 +190,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     )
     candidatos = df_elegiveis[mask_promocao].copy().sort_values(by='Score_Tecnico', ascending=False)
     candidatos['Custo_Acumulado'] = candidatos['Custo_Aumento'].cumsum()
+    
     promovidos = candidatos[candidatos['Custo_Acumulado'] <= BUDGET_TOTAL].copy()
     
     df_elegiveis['Status'] = 'Não Elegível'
@@ -211,35 +198,33 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     df_elegiveis.loc[df_elegiveis['Meses_Casa'] < 12, 'Status'] = 'Em Maturação (<12m)'
     df_elegiveis.loc[df_elegiveis['matricula'].isin(promovidos['matricula']), 'Status'] = 'PROMOVIDO'
 
-    # --- CORPO DO DASHBOARD ---
     
     st.title("People Analytics | Matriz de Decisão")
     
-    # SEÇÃO 1: PREMISSAS
+    # 1. 
     st.markdown('<div id="premissas"></div>', unsafe_allow_html=True)
     st.markdown("""
     <div class="dashboard-card">
         <div class="card-title">1. Premissas & Metodologia</div>
         <div class="card-text">
-            Este modelo utiliza um algoritmo multicritério para garantir meritocracia.
+            Este modelo utiliza um algoritmo multicritério ponderado para identificar talentos de alta performance, garantindo alinhamento cultural e eficiência de custos.
             <br><br>
             <strong>Critérios de Corte (Gatekeepers):</strong><br>
-            • <strong>Fit Cultural ≥ 8.0:</strong> Obrigatório para garantir alinhamento aos valores.<br>
-            • <strong>Tempo de Casa ≥ 12 Meses:</strong> Maturação necessária para o cargo.
+            • <strong>Fit Cultural ≥ 8.0:</strong> Garantia de aderência aos valores da empresa.<br>
+            • <strong>Tempo de Casa ≥ 12 Meses:</strong> Período mínimo de maturação na função.
             <br><br>
             <strong>Composição do Score Técnico (0-10):</strong><br>
-            • <strong>30% Produtividade:</strong> Volume de tarefas (normalizado pelo máximo do time).<br>
-            • <strong>30% Qualidade:</strong> Satisfação do cliente (CSAT).<br>
-            • <strong>20% Eficiência:</strong> Baixa taxa de reincidência.<br>
-            • <strong>20% Avaliação Gestor:</strong> Soft skills e comportamento.
+            • <strong>30% Produtividade:</strong> Volume normalizado de entregas.<br>
+            • <strong>30% Qualidade:</strong> Índice de satisfação e excelência técnica.<br>
+            • <strong>20% Eficiência:</strong> Baixa taxa de retrabalho (reincidência).<br>
+            • <strong>20% Avaliação Gestor:</strong> Liderança e soft skills.
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # SEÇÃO 2: DASHBOARD
+    # 2.
     st.markdown('<div id="dashboard"></div>', unsafe_allow_html=True)
     
-    # KPIs
     kpi1, kpi2, kpi3 = st.columns(3)
     uso_budget = (promovidos['Custo_Aumento'].sum() / BUDGET_TOTAL * 100) if BUDGET_TOTAL > 0 else 0
     
@@ -252,20 +237,20 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     col_chart, col_table = st.columns([1.6, 1])
     
     with col_chart:
-        st.markdown("##### Performance x Cultura")
+        st.markdown("##### Matriz: Performance vs Alinhamento Cultural")
         fig, ax = plt.subplots(figsize=(10, 6))
         fig.patch.set_facecolor('#0e1117')
         ax.set_facecolor('#0e1117')
         
-        # Plot Outros (Branco translúcido para melhor visibilidade em fundo escuro)
+       
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
-                        x='Score_Tecnico', y='fit_cultural', color='#ffffff', alpha=0.2, s=60, label='Outros', ax=ax)
+                        x='Score_Tecnico', y='fit_cultural', color='#ffffff', alpha=0.15, s=60, label='Outros', ax=ax)
         
-        # Plot Maturação (Laranja)
+
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
                         x='Score_Tecnico', y='fit_cultural', color='#d29922', alpha=0.7, s=80, marker='X', label='< 12 Meses', ax=ax)
         
-        # Plot Promovidos (Verde)
+        
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
                             color='#238636', s=150, edgecolor='#f0f6fc', linewidth=1.5, label='Promovidos', ax=ax)
@@ -279,10 +264,8 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         ax.tick_params(colors='#8b949e')
         ax.xaxis.label.set_color('#8b949e')
         ax.yaxis.label.set_color('#8b949e')
-        ax.spines['bottom'].set_color('#30363d')
-        ax.spines['top'].set_color('#30363d') 
-        ax.spines['right'].set_color('#30363d')
-        ax.spines['left'].set_color('#30363d')
+        for spine in ax.spines.values():
+            spine.set_color('#30363d')
 
         legend = ax.legend(loc='lower left', frameon=True, facecolor='#161b22', edgecolor='#30363d')
         plt.setp(legend.get_texts(), color='#8b949e')
@@ -299,9 +282,9 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                 use_container_width=True, height=400, hide_index=True
             )
         else:
-            st.warning("Nenhum colaborador elegível.")
+            st.warning("Nenhum colaborador atendeu aos critérios com o orçamento atual.")
 
-    # SEÇÃO 3: IMPACTO ORÇAMENTÁRIO
+    # 3. 
     st.markdown('<div id="orcamento"></div>', unsafe_allow_html=True)
     if not promovidos.empty:
         custo_medio = promovidos['Custo_Aumento'].mean()
@@ -320,30 +303,28 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                     <div style="font-size: 1.4rem; font-weight: bold; color: #f0f6fc;">R$ {custo_medio:.2f}</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="font-size: 0.9rem; color: #8b949e;">Score Médio "Comprado"</div>
+                    <div style="font-size: 0.9rem; color: #8b949e;">Score Médio do Grupo</div>
                     <div style="font-size: 1.4rem; font-weight: bold; color: #2ecc71;">{score_medio:.2f}</div>
                 </div>
             </div>
             <div class="card-text" style="margin-top: 20px; text-align: center;">
-                O ciclo atual priorizou candidatos que entregam, em média, um score de <strong>{score_medio:.2f}</strong>. 
-                Isso garante que cada real investido está indo para perfis de alta tração e alinhamento cultural.
+                O ciclo priorizou candidatos com score médio de <strong>{score_medio:.2f}</strong>, maximizando o retorno sobre o investimento em folha salarial.
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-    # SEÇÃO 4: PERFIS DOS PROMOVIDOS (NOVO - COM RESUMO TÉCNICO)
+    # 4. 
     st.markdown('<div id="perfis"></div>', unsafe_allow_html=True)
-    st.markdown("### Destaques da Promoção (Top Talent)")
+    st.markdown("### Destaques da Promoção")
     
     if not promovidos.empty:
         top_6 = promovidos.head(6)
         cols = st.columns(3)
         
         for idx, (i, row) in enumerate(top_6.iterrows()):
-            # Lógica de Classificação de Perfil (Construtiva)
             resumo_perfil = "Perfil consistente com entrega equilibrada."
             
-            # Regras de Negócio para o texto descritivo
+        
             if row['tarefas'] > df_elegiveis['tarefas'].quantile(0.8) and row['reincidencia'] < 0.10:
                 resumo_perfil = "Alto volume de entregas mantendo baixo índice de retrabalho. Referência em produtividade."
             
@@ -363,7 +344,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                     <div class="profile-role">Promovido a {row['Proximo_Nivel']}</div>
                     <div style="margin: 15px 0; border-top: 1px solid #30363d;"></div>
                     <div style="font-size: 0.85rem; color: #c9d1d9; text-align: left;">
-                        <strong>Resumo:</strong><br>{resumo_perfil}
+                        <strong>Análise:</strong><br>{resumo_perfil}
                     </div>
                     <div style="margin-top: 15px; font-size: 0.8rem; color: #8b949e; text-align: right;">
                         Score Final: <strong>{row['Score_Tecnico']:.2f}</strong>
@@ -372,16 +353,15 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                 """, unsafe_allow_html=True)
         
         if len(promovidos) > 6:
-            st.caption(f"...e mais {len(promovidos)-6} colaboradores na lista completa acima.")
+            st.caption(f"...e mais {len(promovidos)-6} colaboradores na lista completa.")
 
-    # SEÇÃO 5: INSIGHTS (TÉCNICOS)
+    # 5.
     st.markdown('<div id="insights"></div>', unsafe_allow_html=True)
     
     if not promovidos.empty:
         avg_score_prom = promovidos['Score_Tecnico'].mean()
         avg_score_geral = df_elegiveis['Score_Tecnico'].mean()
         
-        # Cálculo auxiliar para o insight de nível (Assistentes II vs III)
         mask_ii = df_elegiveis['Nível de Cargo'] == 'II'
         mask_iii = df_elegiveis['Nível de Cargo'] == 'III'
         
@@ -398,16 +378,16 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
             <div class="card-title">5. Insights Gerenciais e Recomendações</div>
             <div class="card-text">
                 <strong>1. Elevação da Barra Técnica</strong><br>
-                O grupo selecionado apresenta performance <strong>{((avg_score_prom/avg_score_geral)-1)*100:.1f}% superior</strong> à média geral. Isso confirma a efetividade dos critérios de corte utilizados.
+                O grupo selecionado apresenta performance <strong>{((avg_score_prom/avg_score_geral)-1)*100:.1f}% superior</strong> à média geral, validando os critérios de corte.
                 <br><br>
-                <strong>2. Análise de Performance por Nível (Inversão de Curva)</strong><br>
-                Identificamos que os Assistentes III apresentam score médio inferior aos Assistentes II ({gap_nivel:.1f}%). Isso sugere uma possível saturação nas atribuições do nível mais alto ou necessidade de revisão nos critérios de avaliação para este grupo específico.
+                <strong>2. Análise de Performance por Nível</strong><br>
+                Identificamos que os Assistentes III apresentam score médio inferior aos Assistentes II ({gap_nivel:.1f}%). Isso sugere possível saturação nas atribuições ou necessidade de revisão nos critérios de avaliação deste nível.
                 <br><br>
                 <strong>3. Curva de Engajamento por Tempo de Casa</strong><br>
-                Os dados indicam que a performance atinge o pico entre 12 e 24 meses. Após este período, nota-se uma estabilização ou leve declínio nos indicadores de produtividade. Recomenda-se implementar ações de job rotation ou novos desafios técnicos para colaboradores com mais de 2 anos para evitar estagnação.
+                Os dados indicam que a performance atinge o pico entre 12 e 24 meses, estabilizando posteriormente. Recomenda-se implementar ações de job rotation ou novos desafios técnicos para colaboradores acima de 2 anos para manter a curva ascendente.
             </div>
         </div>
         """, unsafe_allow_html=True)
 
 else:
-    st.info("Carregando dados da API...")
+    st.info("Aguardando carregamento dos dados...")
