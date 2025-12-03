@@ -118,6 +118,20 @@ st.sidebar.markdown("""
     <a href="#perfis" class="toc-link">4. Destaques da Promoção</a>
     <a href="#insights" class="toc-link">5. Insights Gerenciais</a>
 </div>
+""", unsafe_allow_html=True)
+
+# --- SLIDER DE ORÇAMENTO (INTERATIVO) ---
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ⚙️ Configurações")
+BUDGET_TOTAL = st.sidebar.slider(
+    "Orçamento Disponível (R$)", 
+    min_value=1000.0, 
+    max_value=10000.0, 
+    value=3000.0, 
+    step=100.0
+)
+
+st.sidebar.markdown("""
 <div style="margin-top: 30px; font-size: 0.8rem; color: #484f58;">
     © 2025 People Analytics
 </div>
@@ -127,7 +141,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
 
     # --- PROCESSAMENTO ---
     FIT_CORTE = 8.0
-    BUDGET_TOTAL = 3000.0
+    # O Budget agora vem do Slider, não é mais fixo
 
     df_func['matricula'] = df_func['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     df_perf['matricula'] = df_perf['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
@@ -248,11 +262,15 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         fig.patch.set_facecolor('#0e1117')
         ax.set_facecolor('#0e1117')
         
+        # Plot Outros (Branco translúcido para melhor visibilidade em fundo escuro)
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
-                        x='Score_Tecnico', y='fit_cultural', color='#30363d', alpha=0.6, s=60, label='Outros', ax=ax)
+                        x='Score_Tecnico', y='fit_cultural', color='#ffffff', alpha=0.2, s=60, label='Outros', ax=ax)
+        
+        # Plot Maturação (Laranja)
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
                         x='Score_Tecnico', y='fit_cultural', color='#d29922', alpha=0.7, s=80, marker='X', label='< 12 Meses', ax=ax)
         
+        # Plot Promovidos (Verde)
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
                             color='#238636', s=150, edgecolor='#f0f6fc', linewidth=1.5, label='Promovidos', ax=ax)
