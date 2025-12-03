@@ -6,10 +6,8 @@ import seaborn as sns
 from sklearn.preprocessing import MinMaxScaler
 import requests
 
-# 1. Configuração da Página
 st.set_page_config(page_title="Executive Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
-# 2. CSS Corporativo (Sem Emojis, Fontes Profissionais)
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
@@ -19,16 +17,14 @@ st.markdown("""
             color: #2c3e50;
         }
         
-        /* Ocultar elementos padrão do Streamlit */
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
         
-        /* Títulos */
         h1 {
             color: #0f293a;
             font-weight: 700;
-            font-size: 2.2rem;
+            font-size: 2.5rem;
             border-bottom: 2px solid #b0bec5;
             padding-bottom: 10px;
         }
@@ -36,38 +32,31 @@ st.markdown("""
             color: #455a64;
             font-weight: 400;
             margin-top: 20px;
-            font-size: 1.3rem;
         }
         
-        /* Cards de KPI */
         div.metric-container {
             background-color: #ffffff;
             border: 1px solid #e0e0e0;
-            padding: 20px;
-            border-radius: 8px;
+            padding: 15px;
+            border-radius: 5px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             text-align: center;
         }
         label.metric-label {
-            font-size: 0.85rem !important;
+            font-size: 0.9rem !important;
             color: #78909c !important;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            display: block;
-            margin-bottom: 5px;
         }
         div.metric-value {
-            font-size: 2rem !important;
+            font-size: 1.8rem !important;
             color: #0f293a !important;
-            font-weight: 700;
+            font-weight: bold;
         }
     </style>
 """, unsafe_allow_html=True)
 
-# 3. Carregamento de Dados via API
-@st.cache_data
+@st.cache_data(ttl=600)
 def load_data_from_api():
-    # URL fornecida pelo usuário
     api_url = "https://script.google.com/macros/s/AKfycbxHG51T-YJi8XpY1ZFmJ-YvNHO_OLxNA6TGp6BnUY_R539HsQW7bVpEth23TShRdqV1/exec"
     
     try:
@@ -75,96 +64,123 @@ def load_data_from_api():
         response.raise_for_status()
         data = response.json()
         
-        # Converte JSON para DataFrames
-        df_func = pd.DataFrame(data['funcionarios'])
-        df_perf = pd.DataFrame(data['performance'])
-        df_sal = pd.DataFrame(data['salarios'])
+        def get_df_from_keys(data_dict, keys_to_try):
+            for key in keys_to_try:
+                if key in data_dict:
+                    df = pd.DataFrame(data_dict[key])
+                    df.columns = df.columns.str.strip()
+                    return df
+            return pd.DataFrame()
 
-        # Limpeza de Strings
-        for col in df_func.select_dtypes(include=['object']).columns:
-            df_func[col] = df_func[col].str.strip()
-            
-        # Conversão Numérica
-        df_func['matricula'] = pd.to_numeric(df_func['matricula'], errors='coerce')
-        df_perf['matricula'] = pd.to_numeric(df_perf['matricula'], errors='coerce')
+        df_func = get_df_from_keys(data, ['funcionarios', 'Funcionário', 'Funcionario'])
+        df_perf = get_df_from_keys(data, ['performance', 'Performance'])
+        df_sal = get_df_from_keys(data, ['salarios', 'tabela_salarial', 'Tabela Salarial'])
+
+        if df_func.empty or df_perf.empty:
+            st.error("Erro: Tabelas de Funcionário ou Performance não encontradas na API.")
+            return None, None
+
+        if 'matricula' in df_func.columns:
+            df_func['matricula'] = df_func['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
         
-        # Merge
+        if 'matricula' in df_perf.columns:
+            df_perf['matricula'] = df_perf['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+        
         df = pd.merge(df_func, df_perf, on='matricula', how='inner')
         
-        # Tratamento de Datas (Referência: 02/12/2025)
         ref_date = pd.to_datetime('2025-12-02')
-        df['Data de Admissão'] = pd.to_datetime(df['Data de Admissão'], errors='coerce')
-        df['Data última promoção'] = pd.to_datetime(df['Data última promoção'], errors='coerce')
-        
-        # Engenharia de Tempo
-        df['Meses_Casa'] = ((ref_date - df['Data de Admissão']) / pd.Timedelta(days=30)).fillna(0)
-        df['Meses_Sem_Promocao'] = ((ref_date - df['Data última promoção'].fillna(df['Data de Admissão'])) / pd.Timedelta(days=30)).fillna(0)
+
+        if 'Data de Admissão' in df.columns:
+            df['Data de Admissão'] = pd.to_datetime(df['Data de Admissão'], errors='coerce')
+            df['Meses_Casa'] = ((ref_date - df['Data de Admissão']) / pd.Timedelta(days=30)).fillna(0)
+        else:
+            df['Meses_Casa'] = 0
+
+        if 'Data última promoção' in df.columns:
+            df['Data última promoção'] = pd.to_datetime(df['Data última promoção'], errors='coerce')
+            backup_date = df['Data de Admissão'] if 'Data de Admissão' in df.columns else ref_date
+            df['Meses_Sem_Promocao'] = ((ref_date - df['Data última promoção'].fillna(backup_date)) / pd.Timedelta(days=30)).fillna(0)
+        else:
+            df['Meses_Sem_Promocao'] = df['Meses_Casa']
         
         return df, df_sal
         
     except Exception as e:
-        st.error(f"Erro crítico de conexão com a API: {e}")
+        st.error(f"Erro de conexão com a API: {e}")
         return None, None
 
-# Execução do Carregamento
 df_full, df_sal = load_data_from_api()
 
-if df_full is not None:
-    # 4. Processamento e Regras de Negócio
-    df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
-    sal_map = df_sal.set_index('Nível de Cargo')['Valor'].to_dict()
+if df_full is not None and not df_full.empty:
     
-    df_full['Salario_Atual'] = df_full['Nível de Cargo'].map(sal_map)
-    promo_map = {'I': 'II', 'II': 'III', 'III': 'IV', 'IV': 'TETO'}
-    df_full['Proximo_Nivel'] = df_full['Nível de Cargo'].map(promo_map)
-    df_full['Salario_Novo'] = df_full['Proximo_Nivel'].map(sal_map)
-    df_full['Custo_Aumento'] = df_full['Salario_Novo'] - df_full['Salario_Atual']
+    if not df_sal.empty and 'Valor' in df_sal.columns and 'Nível de Cargo' in df_sal.columns:
+        df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
+        sal_map = df_sal.set_index('Nível de Cargo')['Valor'].to_dict()
+        
+        df_full['Salario_Atual'] = df_full['Nível de Cargo'].map(sal_map)
+        promo_map = {'I': 'II', 'II': 'III', 'III': 'IV', 'IV': 'TETO'}
+        df_full['Proximo_Nivel'] = df_full['Nível de Cargo'].map(promo_map)
+        df_full['Salario_Novo'] = df_full['Proximo_Nivel'].map(sal_map)
+        df_full['Custo_Aumento'] = df_full['Salario_Novo'] - df_full['Salario_Atual']
+    else:
+        df_full['Custo_Aumento'] = 0
+        df_full['Salario_Atual'] = 0
     
-    # Base de processamento (remove quem já está no teto)
-    df_process = df_full.dropna(subset=['Custo_Aumento']).copy()
+    df_process = df_full.copy()
+    df_process['Custo_Aumento'] = df_process['Custo_Aumento'].fillna(0)
 
-    # Cálculo do Score Técnico
-    scaler = MinMaxScaler(feature_range=(0, 10))
-    df_process['reincidencia_inv'] = 1 - df_process['reincidencia']
-    cols_norm = ['tarefas', 'qualidade', 'reincidencia_inv']
-    df_process[['n_t', 'n_q', 'n_r']] = scaler.fit_transform(df_process[cols_norm])
-    df_process['Score_Tecnico'] = (0.4 * df_process['n_q']) + (0.3 * df_process['n_t']) + (0.3 * df_process['n_r'])
+    required_cols = ['tarefas', 'qualidade', 'reincidencia']
+    if all(col in df_process.columns for col in required_cols):
+        scaler = MinMaxScaler(feature_range=(0, 10))
+        df_process['reincidencia_inv'] = 1 - df_process['reincidencia']
+        
+        cols_norm = ['tarefas', 'qualidade', 'reincidencia_inv']
+        for col in cols_norm:
+            df_process[col] = pd.to_numeric(df_process[col], errors='coerce').fillna(0)
 
-    # 5. Barra Lateral de Controles
-    st.sidebar.markdown("### Painel de Controle")
-    st.sidebar.markdown("---")
-    budget_total = st.sidebar.number_input("Orçamento (R$)", 3000.0, step=100.0)
+        df_process[['n_t', 'n_q', 'n_r']] = scaler.fit_transform(df_process[cols_norm])
+        df_process['Score_Tecnico'] = (0.4 * df_process['n_q']) + (0.3 * df_process['n_t']) + (0.3 * df_process['n_r'])
+    else:
+        df_process['Score_Tecnico'] = 0
+        st.warning("Colunas de performance (tarefas, qualidade, reincidencia) não encontradas.")
+
+    st.sidebar.title("Painel de Controle")
+    st.sidebar.markdown("**Parâmetros de Simulação**")
+    budget_total = st.sidebar.number_input("Budget (R$)", 3000.0, step=100.0)
     min_fit = st.sidebar.slider("Corte Cultural", 0.0, 10.0, 8.0)
-    min_tempo_casa = st.sidebar.slider("Mínimo Meses de Casa", 0, 24, 6)
+    min_tempo_casa = st.sidebar.slider("Min. Meses Casa", 0, 24, 6)
     
-    # Aplicação dos Filtros
+    if 'fit_cultural' in df_process.columns:
+        df_process['fit_cultural'] = pd.to_numeric(df_process['fit_cultural'], errors='coerce').fillna(0)
+    else:
+        df_process['fit_cultural'] = 0
+
     df_process['Status'] = 'Não Elegível'
     
-    # Elegíveis
-    mask_elegivel = (df_process['fit_cultural'] >= min_fit) & (df_process['Meses_Casa'] >= min_tempo_casa) & (df_process['Meses_Sem_Promocao'] >= 12)
+    mask_elegivel = (df_process['fit_cultural'] >= min_fit) & \
+                    (df_process['Meses_Casa'] >= min_tempo_casa) & \
+                    (df_process['Meses_Sem_Promocao'] >= 12)
+    
     df_process.loc[mask_elegivel, 'Status'] = 'Elegível'
     
-    # Retenção (Hold)
-    mask_hold = (df_process['fit_cultural'] >= min_fit) & ((df_process['Meses_Casa'] < min_tempo_casa) | (df_process['Meses_Sem_Promocao'] < 12)) & (df_process['Score_Tecnico'] > 7)
+    mask_hold = (df_process['fit_cultural'] >= min_fit) & \
+                ((df_process['Meses_Casa'] < min_tempo_casa) | (df_process['Meses_Sem_Promocao'] < 12)) & \
+                (df_process['Score_Tecnico'] > 7)
+    
     df_process.loc[mask_hold, 'Status'] = 'Retenção (Hold)'
 
-    # Seleção dos Promovidos (Algoritmo de Budget)
     candidatos = df_process[df_process['Status'] == 'Elegível'].sort_values('Score_Tecnico', ascending=False).copy()
     candidatos['Custo_Acumulado'] = candidatos['Custo_Aumento'].cumsum()
     promovidos = candidatos[candidatos['Custo_Acumulado'] <= budget_total].copy()
     
-    # Atualiza status final
     df_process.loc[df_process['matricula'].isin(promovidos['matricula']), 'Status'] = 'Promovido'
 
-    # 6. Construção do Dashboard
     st.markdown("<h1>Alocação Estratégica de Mérito</h1>", unsafe_allow_html=True)
     st.markdown("### Análise de Performance Técnica vs. Aderência Cultural")
     st.markdown("---")
 
-    # KPIs
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     
-    # Função auxiliar para estilizar métricas (HTML/CSS)
     def style_metric(label, value, col):
         col.markdown(f"""
             <div class="metric-container">
@@ -175,61 +191,67 @@ if df_full is not None:
 
     style_metric("Colaboradores Promovidos", len(promovidos), kpi1)
     style_metric("Investimento Total", f"R$ {promovidos['Custo_Aumento'].sum():.2f}", kpi2)
-    style_metric("Utilização do Budget", f"{(promovidos['Custo_Aumento'].sum()/budget_total)*100:.1f}%", kpi3)
-    style_metric("Média Score Técnico (Selecionados)", f"{promovidos['Score_Tecnico'].mean():.2f}", kpi4)
+    val_budget = budget_total if budget_total > 0 else 1
+    style_metric("Utilização do Budget", f"{(promovidos['Custo_Aumento'].sum()/val_budget)*100:.1f}%", kpi3)
+    
+    media_score = promovidos['Score_Tecnico'].mean() if not promovidos.empty else 0
+    style_metric("Média Score Técnico (Selecionados)", f"{media_score:.2f}", kpi4)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Área Principal (Gráfico + Tabela)
     col_chart, col_list = st.columns([1.8, 1])
 
     with col_chart:
         st.markdown("### Matriz de Decisão")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.set_style("whitegrid")
-        
-        # Paleta de Cores Corporativa
-        colors = {'Não Elegível': '#cfd8dc', 'Retenção (Hold)': '#f0ad4e', 'Elegível': '#90a4ae', 'Promovido': '#2e7d32'}
-        
-        sns.scatterplot(data=df_process, x='Score_Tecnico', y='fit_cultural', hue='Status', palette=colors, s=120, alpha=0.9, ax=ax)
-        
-        # Rótulos apenas para promovidos
-        for _, row in df_process[df_process['Status']=='Promovido'].iterrows():
-            ax.text(row['Score_Tecnico']+0.1, row['fit_cultural'], f"{int(row['matricula'])}", fontsize=9, fontweight='bold', color='#1b5e20')
+        if not df_process.empty:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.set_style("whitegrid")
+            
+            colors = {'Não Elegível': '#cfd8dc', 'Retenção (Hold)': '#f0ad4e', 'Elegível': '#90a4ae', 'Promovido': '#2e7d32'}
+            
+            sns.scatterplot(data=df_process, x='Score_Tecnico', y='fit_cultural', hue='Status', 
+                            palette=colors, s=100, alpha=0.8, ax=ax, hue_order=colors.keys())
+            
+            for _, row in df_process[df_process['Status']=='Promovido'].iterrows():
+                ax.text(row['Score_Tecnico']+0.1, row['fit_cultural'], f"{row['matricula']}", fontsize=8, fontweight='bold', color='#1b5e20')
 
-        # Linhas de Referência
-        ax.axhline(min_fit, color='#d32f2f', linestyle='--', linewidth=1)
-        ax.text(df_process['Score_Tecnico'].min(), min_fit+0.1, f" Corte Cultural ({min_fit})", color='#d32f2f', fontsize=8, fontweight='bold')
+            ax.axhline(min_fit, color='#d32f2f', linestyle='--', linewidth=1)
+            ax.text(2, min_fit+0.1, f"Corte Cultural ({min_fit})", color='#d32f2f', fontsize=8)
 
-        ax.set_xlabel("Score Técnico (Produtividade + Qualidade)", fontsize=10)
-        ax.set_ylabel("Fit Cultural (Avaliação Gestor)", fontsize=10)
-        ax.legend(loc='lower left', frameon=True)
-        ax.set_xlim(2, 10.5)
-        ax.set_ylim(2, 10.5)
-        
-        st.pyplot(fig)
+            ax.set_xlabel("Score Técnico (Produtividade + Qualidade)", fontsize=10)
+            ax.set_ylabel("Fit Cultural (Avaliação Gestor)", fontsize=10)
+            ax.legend(loc='lower left', frameon=True)
+            ax.set_xlim(0, 10.5)
+            ax.set_ylim(0, 10.5)
+            
+            st.pyplot(fig)
+        else:
+            st.info("Sem dados para exibir no gráfico.")
 
     with col_list:
         st.markdown("### Lista de Aprovação")
-        # Preparar tabela limpa para visualização
-        view_df = promovidos[['matricula', 'Nível de Cargo', 'Proximo_Nivel', 'Score_Tecnico', 'Custo_Aumento']].copy()
-        view_df.columns = ['ID', 'Nível Atual', 'Novo Nível', 'Score', 'Custo']
-        
-        st.dataframe(
-            view_df.style.format({'Score': '{:.2f}', 'Custo': 'R$ {:.2f}'})
-            .background_gradient(subset=['Score'], cmap='Greens'),
-            use_container_width=True,
-            height=400,
-            hide_index=True
-        )
+        if not promovidos.empty:
+            view_df = promovidos[['matricula', 'Nível de Cargo', 'Proximo_Nivel', 'Score_Tecnico', 'Custo_Aumento']].copy()
+            view_df.columns = ['ID', 'Nível Atual', 'Novo Nível', 'Score', 'Custo']
+            
+            st.dataframe(
+                view_df.style.format({'Score': '{:.2f}', 'Custo': 'R$ {:.2f}'})
+                .background_gradient(subset=['Score'], cmap='Greens'),
+                use_container_width=True,
+                height=400,
+                hide_index=True
+            )
+        else:
+            st.warning("Nenhum colaborador elegível para promoção com o budget atual.")
 
-    # Rodapé / Insights
     st.markdown("---")
     st.markdown("### Pontos de Atenção & Recomendações")
     
-    qtd_hold = len(df_process[df_process['Status']=='Retenção (Hold)'])
-    
+    num_hold = len(df_process[df_process['Status']=='Retenção (Hold)'])
     st.info(f"""
-    **Análise de Risco de Retenção:** Identificamos **{qtd_hold} colaboradores** com performance de elite que foram barrados apenas pelo tempo de casa (Política de {min_tempo_casa} meses). 
-    Recomendamos ação de reconhecimento não-monetário imediata para mitigar frustração.
+    **Análise de Retenção:** Identificamos **{num_hold} colaboradores** com alta performance que não atingiram o tempo mínimo de casa. 
+    Recomendamos feedback de reconhecimento para evitar frustração.
     """)
+
+else:
+    st.warning("Aguardando dados da API...")
