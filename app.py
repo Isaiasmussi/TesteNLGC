@@ -23,7 +23,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. CARREGAMENTO E TRATAMENTO INICIAL ---
+# --- 1. CARREGAMENTO ---
 @st.cache_data(ttl=600)
 def load_data():
     api_url = "https://script.google.com/macros/s/AKfycbxHG51T-YJi8XpY1ZFmJ-YvNHO_OLxNA6TGp6BnUY_R539HsQW7bVpEth23TShRdqV1/exec"
@@ -50,21 +50,18 @@ df_func, df_perf, df_sal = load_data()
 
 if df_func is not None and not df_func.empty and not df_perf.empty:
 
-    # --- TRATAMENTO DAS CHAVES (MATRÍCULA) ---
+    # Tratamento de chaves
     df_func['matricula'] = df_func['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     df_perf['matricula'] = df_perf['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     
     df = pd.merge(df_func, df_perf, on='matricula', how='inner')
     
-    # --- CORREÇÃO DO CÁLCULO DE TEMPO DE CASA ---
+    # --- CORREÇÃO DO ERRO DE DATA (TELA VERMELHA) ---
     col_admissao = 'Data de Admissão'
-    
     if col_admissao in df.columns:
-        # Garante que é data
         df[col_admissao] = pd.to_datetime(df[col_admissao], errors='coerce')
         agora = pd.Timestamp.now()
-        
-        # CÁLCULO SEGURO: Diferença em dias / 30.44
+        # Cálculo seguro: Dias totais / média de dias no mês
         df['dias_casa'] = (agora - df[col_admissao]).dt.days
         df['Meses_Casa'] = (df['dias_casa'] / 30.44).fillna(0).astype(int)
     else:
@@ -72,54 +69,60 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         df['Meses_Casa'] = 0
 
     # --- 2. ENGENHARIA DE SALÁRIOS ---
-    if not df_sal.empty:
+    if not df_sal.empty and 'Nível de Cargo' in df.columns:
+        # Padronização para Texto
         df_sal['Nível de Cargo'] = df_sal['Nível de Cargo'].astype(str).str.strip()
-        df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
+        df['Nível de Cargo'] = df['Nível de Cargo'].astype(str).str.strip()
         
-        # Cria dicionário de salários (Média se houver duplicidade de nível entre áreas)
+        df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
         df_sal_map = df_sal.groupby('Nível de Cargo')['Valor'].mean().to_dict()
         
-        if 'Nível de Cargo' in df.columns:
-             df['Nível de Cargo'] = df['Nível de Cargo'].astype(str).str.strip()
-             df['Salario_Atual'] = df['Nível de Cargo'].map(df_sal_map)
-             
-             mapa_promocao = {'I': 'II', 'II': 'III', 'III': 'IV', 'IV': 'TETO'}
-             df['Proximo_Nivel'] = df['Nível de Cargo'].map(mapa_promocao)
-             
-             df['Salario_Novo'] = df['Proximo_Nivel'].map(df_sal_map)
-             df['Custo_Aumento'] = df['Salario_Novo'] - df['Salario_Atual']
-             
-             df_elegiveis = df.dropna(subset=['Custo_Aumento']).copy()
-        else:
-             st.error("Coluna 'Nível de Cargo' não encontrada na tabela de funcionários.")
-             st.stop()
+        df['Salario_Atual'] = df['Nível de Cargo'].map(df_sal_map)
+        
+        # --- MAPA DE PROMOÇÃO (AQUI PODE ESTAR O ERRO DA BASE VAZIA) ---
+        # Verifique se seus níveis são I, II, III ou 1, 2, 3 ou Jr, Pl, Sr
+        mapa_promocao = {'I': 'II', 'II': 'III', 'III': 'IV', 'IV': 'TETO'}
+        
+        df['Proximo_Nivel'] = df['Nível de Cargo'].map(mapa_promocao)
+        df['Salario_Novo'] = df['Proximo_Nivel'].map(df_sal_map)
+        df['Custo_Aumento'] = df['Salario_Novo'] - df['Salario_Atual']
+        
+        df_elegiveis = df.dropna(subset=['Custo_Aumento']).copy()
     else:
+        st.error("Tabelas salariais ou coluna 'Nível de Cargo' ausentes.")
         st.stop()
 
+    # --- DIAGNÓSTICO DE BASE VAZIA ---
     if df_elegiveis.empty:
-        st.warning("Base vazia após cálculo salarial.")
+        st.warning("⚠️ Base vazia após cálculo salarial. O cruzamento falhou.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Níveis encontrados nos Funcionários:**")
+            st.write(df['Nível de Cargo'].unique())
+        
+        with col2:
+            st.markdown("**Níveis encontrados na Tabela Salarial:**")
+            st.write(list(df_sal_map.keys()))
+            
+        st.info("💡 **Dica:** Os nomes acima precisam ser IDÊNTICOS. Se um for 'Analista I' e o outro for só 'I', o sistema não cruza. Ajuste o 'mapa_promocao' no código se necessário.")
         st.stop()
 
-    # --- 3. CÁLCULO DO SCORE TÉCNICO ---
+    # --- 3. SCORE TÉCNICO (40/30/30) ---
     cols_calc = ['tarefas', 'qualidade', 'reincidencia', 'fit_cultural']
-    
     for col in cols_calc:
         if col in df_elegiveis.columns:
             df_elegiveis[col] = df_elegiveis[col].astype(str).str.replace(',', '.')
             df_elegiveis[col] = pd.to_numeric(df_elegiveis[col], errors='coerce').fillna(0)
 
     scaler = MinMaxScaler(feature_range=(0, 10))
-    
-    # Inverte a reincidência
     df_elegiveis['reincidencia_score'] = df_elegiveis['reincidencia'] * -1 
 
     cols_norm = ['tarefas', 'qualidade', 'reincidencia_score']
     dados_norm = scaler.fit_transform(df_elegiveis[cols_norm])
     df_norm = pd.DataFrame(dados_norm, columns=[c+'_n' for c in cols_norm], index=df_elegiveis.index)
-    
     df_elegiveis = pd.concat([df_elegiveis, df_norm], axis=1)
 
-    # PESOS: 40% Quali, 30% Vol, 30% Reinc
     df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade_n'] * 0.40) + \
                                     (df_elegiveis['tarefas_n'] * 0.30) + \
                                     (df_elegiveis['reincidencia_score_n'] * 0.30)
@@ -127,9 +130,8 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     # --- 4. DASHBOARD ---
     st.sidebar.title("Painel de Controle")
     budget_total = st.sidebar.number_input("Budget (R$)", value=3000.0, step=100.0)
-    fit_corte = st.sidebar.slider("Régua Fit Cultural (Min 8.0)", 8.0, 10.0, 8.0) 
+    fit_corte = st.sidebar.slider("Régua Fit Cultural", 8.0, 10.0, 8.0) 
 
-    # FILTROS: Fit >= Corte (Min 8) E Meses_Casa >= 12
     mask_promocao = (
         (df_elegiveis['fit_cultural'] >= fit_corte) & 
         (df_elegiveis['Meses_Casa'] >= 12)
@@ -141,7 +143,6 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     candidatos['Custo_Acumulado'] = candidatos['Custo_Aumento'].cumsum()
     promovidos = candidatos[candidatos['Custo_Acumulado'] <= budget_total].copy()
 
-    # Status
     df_elegiveis['Status'] = 'Não Elegível'
     df_elegiveis.loc[mask_promocao, 'Status'] = 'Elegível (Budget Insuficiente)' 
     df_elegiveis.loc[df_elegiveis['Meses_Casa'] < 12, 'Status'] = 'Em Maturação (<12m)'
@@ -154,7 +155,6 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     kpi2.markdown(f'<div class="metric-container"><label class="metric-label">Investimento</label><div class="metric-value">R$ {promovidos["Custo_Aumento"].sum():.2f}</div></div>', unsafe_allow_html=True)
     uso_budget = (promovidos['Custo_Aumento'].sum() / budget_total * 100) if budget_total > 0 else 0
     kpi3.markdown(f'<div class="metric-container"><label class="metric-label">Uso do Budget</label><div class="metric-value">{uso_budget:.1f}%</div></div>', unsafe_allow_html=True)
-    
     st.markdown("---")
 
     col_chart, col_table = st.columns([1.8, 1])
@@ -163,52 +163,33 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         fig, ax = plt.subplots(figsize=(12, 7))
         sns.set_style("whitegrid")
 
-        # Plot Geral
+        # Plots
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
-                        x='Score_Tecnico', y='fit_cultural', 
-                        color='grey', alpha=0.3, s=60, label='Outros', ax=ax)
+                        x='Score_Tecnico', y='fit_cultural', color='grey', alpha=0.3, s=60, label='Outros', ax=ax)
         
-        # Plot Maturação (Quem tem < 12 meses)
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
-                        x='Score_Tecnico', y='fit_cultural', 
-                        color='orange', alpha=0.4, s=80, marker='X', label='< 12 Meses', ax=ax)
+                        x='Score_Tecnico', y='fit_cultural', color='orange', alpha=0.5, s=80, marker='X', label='< 12 Meses', ax=ax)
 
-        # Plot Promovidos
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
                             color='#2ecc71', s=150, edgecolor='black', label='Promovidos', ax=ax)
-
             for line in range(0, promovidos.shape[0]):
-                ax.text(promovidos.Score_Tecnico.iloc[line]+0.05, 
-                        promovidos.fit_cultural.iloc[line], 
-                        f"ID {promovidos.matricula.iloc[line]}", 
-                        horizontalalignment='left', size='small', color='black', weight='semibold')
-            
-            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5, label='Corte Técnico')
+                ax.text(promovidos.Score_Tecnico.iloc[line]+0.05, promovidos.fit_cultural.iloc[line], 
+                        f"ID {promovidos.matricula.iloc[line]}", horizontalalignment='left', size='small', color='black', weight='semibold')
+            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5)
 
-        ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Régua Fit ({fit_corte})')
+        ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Régua ({fit_corte})')
         ax.legend(loc='lower left', frameon=True)
-        ax.set_xlabel("Score Técnico (0-10)", fontsize=10)
-        ax.set_ylabel("Fit Cultural (0-10)", fontsize=10)
+        ax.set_xlabel("Score Técnico (0-10)")
+        ax.set_ylabel("Fit Cultural (0-10)")
         fig.tight_layout()
         st.pyplot(fig, use_container_width=True)
 
     with col_table:
         st.markdown("#### Lista de Promoção")
         if not promovidos.empty:
-            st.dataframe(
-                promovidos[['matricula', 'Meses_Casa', 'Proximo_Nivel', 'Score_Tecnico', 'Custo_Aumento']]
-                .style.format({
-                    'Score_Tecnico': '{:.2f}', 
-                    'Custo_Aumento': 'R$ {:.2f}'
-                })
-                .background_gradient(subset=['Score_Tecnico'], cmap='Greens'),
-                use_container_width=True,
-                height=450,
-                hide_index=True
-            )
+            st.dataframe(promovidos[['matricula', 'Meses_Casa', 'Proximo_Nivel', 'Score_Tecnico', 'Custo_Aumento']].style.format({'Score_Tecnico': '{:.2f}', 'Custo_Aumento': 'R$ {:.2f}'}).background_gradient(subset=['Score_Tecnico'], cmap='Greens'), use_container_width=True, height=450, hide_index=True)
         else:
-            st.warning("Ninguém elegível (Fit < 8 ou Tempo < 12m).")
-
+            st.warning("Ninguém elegível.")
 else:
-    st.info("Aguardando carregamento da API...")
+    st.info("Carregando...")
