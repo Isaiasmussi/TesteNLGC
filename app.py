@@ -56,31 +56,27 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     
     df = pd.merge(df_func, df_perf, on='matricula', how='inner')
     
-    # --- NOVA REGRA: CÁLCULO DE TEMPO DE CASA (12 MESES) ---
-    # Agora usamos o nome EXATO que você passou: "Data de Admissão"
+    # --- CORREÇÃO DO CÁLCULO DE TEMPO DE CASA ---
     col_admissao = 'Data de Admissão'
     
     if col_admissao in df.columns:
+        # Garante que é data
         df[col_admissao] = pd.to_datetime(df[col_admissao], errors='coerce')
         agora = pd.Timestamp.now()
-        # Calcula diferença em meses
-        df['Meses_Casa'] = (agora - df[col_admissao]) / np.timedelta64(1, 'M')
-        df['Meses_Casa'] = df['Meses_Casa'].fillna(0).astype(int)
+        
+        # CÁLCULO SEGURO: Diferença em dias / 30.44
+        df['dias_casa'] = (agora - df[col_admissao]).dt.days
+        df['Meses_Casa'] = (df['dias_casa'] / 30.44).fillna(0).astype(int)
     else:
-        st.error(f"Coluna '{col_admissao}' não encontrada. Verifique se o nome na API está idêntico.")
+        st.error(f"Coluna '{col_admissao}' não encontrada.")
         df['Meses_Casa'] = 0
 
     # --- 2. ENGENHARIA DE SALÁRIOS ---
     if not df_sal.empty:
-        # Usando o nome exato "Nível de Cargo"
         df_sal['Nível de Cargo'] = df_sal['Nível de Cargo'].astype(str).str.strip()
-        
-        # ATENÇÃO: Se houver Níveis iguais para Clusters diferentes, precisamos filtrar.
-        # Por enquanto, vou assumir uma média ou pegar o primeiro valor para simplificar,
-        # mas o ideal seria cruzar por Cluster E Nível.
         df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
         
-        # Cria dicionário de salários
+        # Cria dicionário de salários (Média se houver duplicidade de nível entre áreas)
         df_sal_map = df_sal.groupby('Nível de Cargo')['Valor'].mean().to_dict()
         
         if 'Nível de Cargo' in df.columns:
@@ -104,8 +100,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         st.warning("Base vazia após cálculo salarial.")
         st.stop()
 
-    # --- 3. CÁLCULO DO SCORE TÉCNICO (40% Quali, 30% Vol, 30% Reinc) ---
-    # Usando os nomes exatos: 'tarefas', 'qualidade', 'reincidencia'
+    # --- 3. CÁLCULO DO SCORE TÉCNICO ---
     cols_calc = ['tarefas', 'qualidade', 'reincidencia', 'fit_cultural']
     
     for col in cols_calc:
@@ -115,8 +110,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
 
     scaler = MinMaxScaler(feature_range=(0, 10))
     
-    # Inverte a reincidência (Quanto menos reincidência, melhor o score)
-    # Ex: Quem tem 0 reincidência ganha nota máxima
+    # Inverte a reincidência
     df_elegiveis['reincidencia_score'] = df_elegiveis['reincidencia'] * -1 
 
     cols_norm = ['tarefas', 'qualidade', 'reincidencia_score']
@@ -125,22 +119,17 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     
     df_elegiveis = pd.concat([df_elegiveis, df_norm], axis=1)
 
-    # APLICAÇÃO DOS PESOS DEFINIDOS:
-    # 40% Qualidade + 30% Tarefas + 30% Reincidência
+    # PESOS: 40% Quali, 30% Vol, 30% Reinc
     df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade_n'] * 0.40) + \
                                     (df_elegiveis['tarefas_n'] * 0.30) + \
                                     (df_elegiveis['reincidencia_score_n'] * 0.30)
 
-    # --- 4. DASHBOARD E FILTROS ---
+    # --- 4. DASHBOARD ---
     st.sidebar.title("Painel de Controle")
     budget_total = st.sidebar.number_input("Budget (R$)", value=3000.0, step=100.0)
-    
-    # Regra fixa: Mínimo 8.0, mas slider permite subir a régua
     fit_corte = st.sidebar.slider("Régua Fit Cultural (Min 8.0)", 8.0, 10.0, 8.0) 
 
-    # --- APLICANDO OS FILTROS DE NEGÓCIO ---
-    # 1. Fit >= Corte (Min 8)
-    # 2. Meses de Casa >= 12
+    # FILTROS: Fit >= Corte (Min 8) E Meses_Casa >= 12
     mask_promocao = (
         (df_elegiveis['fit_cultural'] >= fit_corte) & 
         (df_elegiveis['Meses_Casa'] >= 12)
@@ -152,7 +141,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     candidatos['Custo_Acumulado'] = candidatos['Custo_Aumento'].cumsum()
     promovidos = candidatos[candidatos['Custo_Acumulado'] <= budget_total].copy()
 
-    # Status para visualização
+    # Status
     df_elegiveis['Status'] = 'Não Elegível'
     df_elegiveis.loc[mask_promocao, 'Status'] = 'Elegível (Budget Insuficiente)' 
     df_elegiveis.loc[df_elegiveis['Meses_Casa'] < 12, 'Status'] = 'Em Maturação (<12m)'
@@ -179,10 +168,10 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                         x='Score_Tecnico', y='fit_cultural', 
                         color='grey', alpha=0.3, s=60, label='Outros', ax=ax)
         
-        # Destaque para quem tem potencial mas tem pouco tempo de casa
+        # Plot Maturação (Quem tem < 12 meses)
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
                         x='Score_Tecnico', y='fit_cultural', 
-                        color='orange', alpha=0.4, s=80, marker='X', label='< 12 Meses de Casa', ax=ax)
+                        color='orange', alpha=0.4, s=80, marker='X', label='< 12 Meses', ax=ax)
 
         # Plot Promovidos
         if not promovidos.empty:
@@ -195,7 +184,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                         f"ID {promovidos.matricula.iloc[line]}", 
                         horizontalalignment='left', size='small', color='black', weight='semibold')
             
-            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5, label='Corte Técnico Dinâmico')
+            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5, label='Corte Técnico')
 
         ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Régua Fit ({fit_corte})')
         ax.legend(loc='lower left', frameon=True)
@@ -219,7 +208,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                 hide_index=True
             )
         else:
-            st.warning("Ninguém elegível com as regras atuais (Fit >= 8 e >12 Meses).")
+            st.warning("Ninguém elegível (Fit < 8 ou Tempo < 12m).")
 
 else:
     st.info("Aguardando carregamento da API...")
