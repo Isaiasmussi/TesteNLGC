@@ -50,42 +50,53 @@ df_func, df_perf, df_sal = load_data()
 
 if df_func is not None and not df_func.empty and not df_perf.empty:
 
-    # --- TRATAMENTO DE CHAVES ---
+    # --- TRATAMENTO DAS CHAVES (MATRÍCULA) ---
     df_func['matricula'] = df_func['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     df_perf['matricula'] = df_perf['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     
     df = pd.merge(df_func, df_perf, on='matricula', how='inner')
     
-    # --- NOVA REGRA: CÁLCULO DE TEMPO DE CASA (MESES) ---
-    # Tenta encontrar a coluna de admissão com variações comuns de nome
-    col_admissao = next((col for col in df.columns if col.lower() in ['admissao', 'data_admissao', 'data admissao', 'inicio']), None)
+    # --- NOVA REGRA: CÁLCULO DE TEMPO DE CASA (12 MESES) ---
+    # Agora usamos o nome EXATO que você passou: "Data de Admissão"
+    col_admissao = 'Data de Admissão'
     
-    if col_admissao:
+    if col_admissao in df.columns:
         df[col_admissao] = pd.to_datetime(df[col_admissao], errors='coerce')
         agora = pd.Timestamp.now()
         # Calcula diferença em meses
         df['Meses_Casa'] = (agora - df[col_admissao]) / np.timedelta64(1, 'M')
         df['Meses_Casa'] = df['Meses_Casa'].fillna(0).astype(int)
     else:
-        st.error("Coluna de Data de Admissão não encontrada. O filtro de 12 meses não poderá ser aplicado.")
+        st.error(f"Coluna '{col_admissao}' não encontrada. Verifique se o nome na API está idêntico.")
         df['Meses_Casa'] = 0
 
     # --- 2. ENGENHARIA DE SALÁRIOS ---
     if not df_sal.empty:
+        # Usando o nome exato "Nível de Cargo"
         df_sal['Nível de Cargo'] = df_sal['Nível de Cargo'].astype(str).str.strip()
-        df['Nível de Cargo'] = df['Nível de Cargo'].astype(str).str.strip()
         
+        # ATENÇÃO: Se houver Níveis iguais para Clusters diferentes, precisamos filtrar.
+        # Por enquanto, vou assumir uma média ou pegar o primeiro valor para simplificar,
+        # mas o ideal seria cruzar por Cluster E Nível.
         df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
-        df_sal_map = df_sal.set_index('Nível de Cargo')['Valor'].to_dict()
         
-        df['Salario_Atual'] = df['Nível de Cargo'].map(df_sal_map)
-        mapa_promocao = {'I': 'II', 'II': 'III', 'III': 'IV', 'IV': 'TETO'}
-        df['Proximo_Nivel'] = df['Nível de Cargo'].map(mapa_promocao)
+        # Cria dicionário de salários
+        df_sal_map = df_sal.groupby('Nível de Cargo')['Valor'].mean().to_dict()
         
-        df['Salario_Novo'] = df['Proximo_Nivel'].map(df_sal_map)
-        df['Custo_Aumento'] = df['Salario_Novo'] - df['Salario_Atual']
-        
-        df_elegiveis = df.dropna(subset=['Custo_Aumento']).copy()
+        if 'Nível de Cargo' in df.columns:
+             df['Nível de Cargo'] = df['Nível de Cargo'].astype(str).str.strip()
+             df['Salario_Atual'] = df['Nível de Cargo'].map(df_sal_map)
+             
+             mapa_promocao = {'I': 'II', 'II': 'III', 'III': 'IV', 'IV': 'TETO'}
+             df['Proximo_Nivel'] = df['Nível de Cargo'].map(mapa_promocao)
+             
+             df['Salario_Novo'] = df['Proximo_Nivel'].map(df_sal_map)
+             df['Custo_Aumento'] = df['Salario_Novo'] - df['Salario_Atual']
+             
+             df_elegiveis = df.dropna(subset=['Custo_Aumento']).copy()
+        else:
+             st.error("Coluna 'Nível de Cargo' não encontrada na tabela de funcionários.")
+             st.stop()
     else:
         st.stop()
 
@@ -93,8 +104,10 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         st.warning("Base vazia após cálculo salarial.")
         st.stop()
 
-    # --- 3. ENGENHARIA DO SCORE TÉCNICO (REGRA: 40% Quali, 30% Vol, 30% Reincidência) ---
+    # --- 3. CÁLCULO DO SCORE TÉCNICO (40% Quali, 30% Vol, 30% Reinc) ---
+    # Usando os nomes exatos: 'tarefas', 'qualidade', 'reincidencia'
     cols_calc = ['tarefas', 'qualidade', 'reincidencia', 'fit_cultural']
+    
     for col in cols_calc:
         if col in df_elegiveis.columns:
             df_elegiveis[col] = df_elegiveis[col].astype(str).str.replace(',', '.')
@@ -102,31 +115,31 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
 
     scaler = MinMaxScaler(feature_range=(0, 10))
     
-    # Inverte a reincidência (Menor é melhor) -> 1 - valor (assumindo que seja %)
-    # Se reincidência for contagem absoluta (ex: 5 erros), o MinMaxScaler abaixo cuidará da escala, 
-    # mas precisamos garantir a inversão de polaridade.
-    df_elegiveis['reincidencia_invertida'] = df_elegiveis['reincidencia'] * -1 
+    # Inverte a reincidência (Quanto menos reincidência, melhor o score)
+    # Ex: Quem tem 0 reincidência ganha nota máxima
+    df_elegiveis['reincidencia_score'] = df_elegiveis['reincidencia'] * -1 
 
-    cols_norm = ['tarefas', 'qualidade', 'reincidencia_invertida']
+    cols_norm = ['tarefas', 'qualidade', 'reincidencia_score']
     dados_norm = scaler.fit_transform(df_elegiveis[cols_norm])
     df_norm = pd.DataFrame(dados_norm, columns=[c+'_n' for c in cols_norm], index=df_elegiveis.index)
     
     df_elegiveis = pd.concat([df_elegiveis, df_norm], axis=1)
 
-    # AQUI APLICA A TUA LÓGICA DE PESOS
+    # APLICAÇÃO DOS PESOS DEFINIDOS:
+    # 40% Qualidade + 30% Tarefas + 30% Reincidência
     df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade_n'] * 0.40) + \
                                     (df_elegiveis['tarefas_n'] * 0.30) + \
-                                    (df_elegiveis['reincidencia_invertida_n'] * 0.30)
+                                    (df_elegiveis['reincidencia_score_n'] * 0.30)
 
-    # --- 4. DASHBOARD E FILTROS FINAIS ---
+    # --- 4. DASHBOARD E FILTROS ---
     st.sidebar.title("Painel de Controle")
     budget_total = st.sidebar.number_input("Budget (R$)", value=3000.0, step=100.0)
     
-    # Slider começa em 8.0 pq é tua regra de negócio mínima
-    fit_corte = st.sidebar.slider("Corte Fit Cultural (Min 8.0)", 8.0, 10.0, 8.0) 
+    # Regra fixa: Mínimo 8.0, mas slider permite subir a régua
+    fit_corte = st.sidebar.slider("Régua Fit Cultural (Min 8.0)", 8.0, 10.0, 8.0) 
 
     # --- APLICANDO OS FILTROS DE NEGÓCIO ---
-    # 1. Fit >= Corte (que já é min 8)
+    # 1. Fit >= Corte (Min 8)
     # 2. Meses de Casa >= 12
     mask_promocao = (
         (df_elegiveis['fit_cultural'] >= fit_corte) & 
@@ -139,13 +152,10 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     candidatos['Custo_Acumulado'] = candidatos['Custo_Aumento'].cumsum()
     promovidos = candidatos[candidatos['Custo_Acumulado'] <= budget_total].copy()
 
-    # Definindo Status para o Gráfico
+    # Status para visualização
     df_elegiveis['Status'] = 'Não Elegível'
-    # Quem tem Fit e Tempo, mas não coube no bolso
     df_elegiveis.loc[mask_promocao, 'Status'] = 'Elegível (Budget Insuficiente)' 
-    # Quem não tem tempo de casa
     df_elegiveis.loc[df_elegiveis['Meses_Casa'] < 12, 'Status'] = 'Em Maturação (<12m)'
-    # Quem foi promovido de fato
     df_elegiveis.loc[df_elegiveis['matricula'].isin(promovidos['matricula']), 'Status'] = 'PROMOVIDO'
 
     st.markdown("### Matriz de Decisão: Performance x Cultura")
@@ -164,17 +174,17 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         fig, ax = plt.subplots(figsize=(12, 7))
         sns.set_style("whitegrid")
 
-        # Plot dos não elegíveis (geral)
+        # Plot Geral
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
                         x='Score_Tecnico', y='fit_cultural', 
                         color='grey', alpha=0.3, s=60, label='Outros', ax=ax)
         
-        # Plot dos "Em maturação" (para visualizares quem tu perdeu por tempo de casa)
+        # Destaque para quem tem potencial mas tem pouco tempo de casa
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
                         x='Score_Tecnico', y='fit_cultural', 
-                        color='orange', alpha=0.4, s=60, marker='X', label='< 12 Meses', ax=ax)
+                        color='orange', alpha=0.4, s=80, marker='X', label='< 12 Meses de Casa', ax=ax)
 
-        # Plot dos promovidos
+        # Plot Promovidos
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
                             color='#2ecc71', s=150, edgecolor='black', label='Promovidos', ax=ax)
@@ -185,9 +195,9 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                         f"ID {promovidos.matricula.iloc[line]}", 
                         horizontalalignment='left', size='small', color='black', weight='semibold')
             
-            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5, label='Corte Técnico')
+            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5, label='Corte Técnico Dinâmico')
 
-        ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Min Cultura ({fit_corte})')
+        ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Régua Fit ({fit_corte})')
         ax.legend(loc='lower left', frameon=True)
         ax.set_xlabel("Score Técnico (0-10)", fontsize=10)
         ax.set_ylabel("Fit Cultural (0-10)", fontsize=10)
@@ -209,7 +219,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                 hide_index=True
             )
         else:
-            st.warning("Ninguém elegível (Fit < 8 ou Tempo < 12m).")
+            st.warning("Ninguém elegível com as regras atuais (Fit >= 8 e >12 Meses).")
 
 else:
     st.info("Aguardando carregamento da API...")
