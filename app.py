@@ -202,8 +202,8 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
             Este modelo utiliza um algoritmo multicritério para garantir meritocracia.
             <br><br>
             <strong>Critérios de Corte (Gatekeepers):</strong><br>
-            • <strong>Fit Cultural ≥ 8.0:</strong> Priorizamos o alinhamento comportamental e de valores. A premissa é que hard skills (técnica) podem ser desenvolvidas com treinamento eficaz, enquanto a dissonância cultural é de difícil correção e alto custo. Um Fit Cultural baixo compromete a sinergia da equipe e pode erodir o clima organizacional a longo prazo.<br>
-            • <strong>Tempo de Casa ≥ 12 Meses:</strong> Estabelecemos um ciclo mínimo de um ano para garantir a consolidação do colaborador na função atual. Embora reconheçamos a agilidade e a ambição de crescimento dos novos talentos, este período é vital para a consistência da entrega. Além disso, regras claras de tempo promovem a isonomia (igualdade), evitando percepções de favorecimento e protegendo a motivação do coletivo.
+            • <strong>Fit Cultural ≥ 8.0:</strong> Priorizamos o alinhamento comportamental e de valores. A premissa é que hard skills podem ser desenvolvidas com treinamento eficaz, enquanto a dissonância cultural é de difícil correção e alto custo. Um Fit Cultural baixo compromete a sinergia da equipe e pode erodir o clima organizacional a longo prazo.<br>
+            • <strong>Tempo de Casa ≥ 12 Meses:</strong> Estabelecemos um ciclo mínimo de um ano para garantir a consolidação do colaborador na função atual. Embora reconheçamos a agilidade e a ambição de crescimento dos novos talentos, este período é vital para a consistência da entrega. Além disso, regras claras de tempo promovem a isonomia, evitando percepções de favorecimento e protegendo a motivação do coletivo.
             <br><br>
             <strong>Composição do Score Técnico (0-10):</strong><br>
             • <strong>30%</strong> Produtividade<br>
