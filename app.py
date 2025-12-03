@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe # Importação para o efeito de contorno no texto
 import seaborn as sns
 from sklearn.preprocessing import MinMaxScaler
 import requests
@@ -9,28 +10,28 @@ from datetime import datetime
 
 st.set_page_config(page_title="People Analytics - Assistente de Suporte", layout="wide", initial_sidebar_state="expanded")
 
-# --- ESTILOS CSS ADAPTATIVOS (CLARO/ESCURO) ---
+# --- ESTILOS CSS ADAPTATIVOS ---
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+        html, body, [class*="css"]  { font-family: 'Roboto', sans-serif; color: var(--text-color); }
         
-        /* Fontes globais - Usa a cor de texto padrão do tema atual */
-        html, body, [class*="css"]  { 
-            font-family: 'Roboto', sans-serif; 
-            color: var(--text-color); 
-        }
-        
-        /* Ajuste de espaçamento */
         .block-container { padding-top: 1rem; padding-bottom: 5rem; }
 
-        /* Links do Índice - Cor primária do tema */
-        .toc-link {
-            display: block; padding: 6px 0; color: var(--text-color); text-decoration: none;
-            font-size: 0.9rem; transition: color 0.2s; opacity: 0.8;
+        [data-testid="stSidebar"] {
+            background-color: #161b22;
+            border-right: 1px solid #30363d;
         }
-        .toc-link:hover { color: var(--primary-color); font-weight: 500; opacity: 1.0; }
+        .toc-header {
+            font-size: 1.5rem; font-weight: 700; color: #f0f6fc; margin-bottom: 1rem;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .toc-link {
+            display: block; padding: 8px 0; color: #8b949e; text-decoration: none;
+            font-size: 0.95rem; transition: color 0.2s;
+        }
+        .toc-link:hover { color: #58a6ff; font-weight: bold; }
         
-        /* Cards de Conteúdo: Usa a cor de fundo secundária do tema (cinza claro no light, cinza escuro no dark) */
         .dashboard-card {
             background-color: var(--secondary-background-color);
             border: 1px solid rgba(128, 128, 128, 0.2);
@@ -39,7 +40,6 @@ st.markdown("""
             margin-bottom: 20px;
         }
         
-        /* Mini Cards de Perfil */
         .profile-card {
             background-color: var(--background-color);
             border: 1px solid rgba(128, 128, 128, 0.2);
@@ -50,18 +50,15 @@ st.markdown("""
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
         .profile-id { color: var(--primary-color); font-weight: bold; font-size: 1.1rem; }
-        .profile-role { color: var(--text-color); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 0.5px; opacity: 0.7; }
+        .profile-role { color: var(--text-color); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 0.5px; opacity: 0.7;}
         
-        /* Títulos */
         .card-title {
             color: var(--primary-color); font-size: 1.1rem; font-weight: 600; margin-bottom: 10px;
             text-transform: uppercase; letter-spacing: 1px;
         }
         
-        /* Texto corrido */
         .card-text { font-size: 0.95rem; line-height: 1.6; color: var(--text-color); }
         
-        /* Métricas (KPIs) */
         div.metric-container {
             background-color: var(--secondary-background-color); 
             border: 1px solid rgba(128, 128, 128, 0.2); 
@@ -70,11 +67,6 @@ st.markdown("""
         }
         label.metric-label { font-size: 0.8rem !important; color: var(--text-color) !important; opacity: 0.7; text-transform: uppercase; }
         div.metric-value { font-size: 1.6rem !important; color: var(--primary-color) !important; font-weight: 700; }
-        
-        /* Ajuste fino para gráficos */
-        [data-testid="stSidebar"] {
-            border-right: 1px solid rgba(128, 128, 128, 0.2);
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -103,18 +95,21 @@ def load_data():
 df_func, df_perf, df_sal = load_data()
 
 st.sidebar.markdown("""
-<div style="margin-bottom: 1rem; font-weight: bold; font-size: 1.1rem;">Índice</div>
+<div class="toc-header">
+    Índice 
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3zM3 9h18M9 21V9"/></svg>
+</div>
 <div style="margin-left: 5px;">
-    <a href="#premissas" class="toc-link">#1. Premissas & Metodologia</a>
-    <a href="#dashboard" class="toc-link">#2. Dashboard de Performance</a>
-    <a href="#orcamento" class="toc-link">#3. Impacto Orçamentário</a>
-    <a href="#perfis" class="toc-link">#4. Destaques da Promoção</a>
-    <a href="#insights" class="toc-link">#5. Insights Gerenciais</a>
+    <a href="#premissas" class="toc-link">#1.</a>
+    <a href="#dashboard" class="toc-link">#2.</a>
+    <a href="#orcamento" class="toc-link">#3.</a>
+    <a href="#perfis" class="toc-link">#4.</a>
+    <a href="#insights" class="toc-link">#5.</a>
 </div>
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("""
-<div style="margin-top: 30px; font-size: 0.8rem; opacity: 0.6;">
+<div style="margin-top: 30px; font-size: 0.8rem; color: #484f58;">
     © 2025 People Analytics
 </div>
 """, unsafe_allow_html=True)
@@ -197,7 +192,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     df_elegiveis.loc[df_elegiveis['Meses_Casa'] < 12, 'Status'] = 'Em Maturação (<12m)'
     df_elegiveis.loc[df_elegiveis['matricula'].isin(promovidos['matricula']), 'Status'] = 'PROMOVIDO'
 
-    st.title("People Analytics | Matriz de Decisão")
+    st.title("People Analytics | Análise de Promoção")
     
     st.markdown('<div id="premissas"></div>', unsafe_allow_html=True)
     st.markdown("""
@@ -207,14 +202,14 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
             Este modelo utiliza um algoritmo multicritério para garantir meritocracia.
             <br><br>
             <strong>Critérios de Corte (Gatekeepers):</strong><br>
-            • <strong>Fit Cultural ≥ 8.0:</strong> Obrigatório para garantir alinhamento aos valores.<br>
-            • <strong>Tempo de Casa ≥ 12 Meses:</strong> Maturação necessária para o cargo.
+            • <strong>Fit Cultural ≥ 8.0:</strong> Priorizamos o alinhamento comportamental e de valores. A premissa é que hard skills (técnica) podem ser desenvolvidas com treinamento eficaz, enquanto a dissonância cultural é de difícil correção e alto custo. Um Fit Cultural baixo compromete a sinergia da equipe e pode erodir o clima organizacional a longo prazo.<br>
+            • <strong>Tempo de Casa ≥ 12 Meses:</strong> Estabelecemos um ciclo mínimo de um ano para garantir a consolidação do colaborador na função atual. Embora reconheçamos a agilidade e a ambição de crescimento dos novos talentos, este período é vital para a consistência da entrega. Além disso, regras claras de tempo promovem a isonomia (igualdade), evitando percepções de favorecimento e protegendo a motivação do coletivo.
             <br><br>
             <strong>Composição do Score Técnico (0-10):</strong><br>
-            • <strong>30% Produtividade:</strong> Volume de tarefas (normalizado pelo máximo do time).<br>
-            • <strong>30% Qualidade:</strong> Satisfação do cliente (CSAT).<br>
-            • <strong>20% Eficiência:</strong> Baixa taxa de reincidência.<br>
-            • <strong>20% Avaliação Gestor:</strong> Soft skills e comportamento.
+            • <strong>30%</strong> Produtividade<br>
+            • <strong>30%</strong> Qualidade<br>
+            • <strong>20%</strong> Eficiência<br>
+            • <strong>20%</strong> Avaliação Gestor
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -240,7 +235,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         fig.patch.set_facecolor('none')
         ax.set_facecolor('none')
         
-        # Cores Adaptativas (Usando Cinza para Outros que funciona em ambos)
+        # Cores Adaptativas
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
                         x='Score_Tecnico', y='fit_cultural', color='gray', alpha=0.3, s=60, label='Outros', ax=ax)
         
@@ -250,23 +245,19 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
                             color='#2ecc71', s=150, edgecolor='black', linewidth=1.0, label='Promovidos', ax=ax)
+            
             for line in range(0, promovidos.shape[0]):
-                # Cor do texto do gráfico precisa de contraste. O padrão do matplotlib é preto.
-                # Para funcionar no dark, vamos forçar uma cor que funcione em ambos ou deixar o Streamlit gerenciar?
-                # Vamos usar um cinza escuro quase preto que é padrão, mas adicionar um contorno branco se possível?
-                # Simples: Manter padrão (preto) funciona bem no light. No dark, o fundo é escuro.
-                # Melhor: Usar a cor primária do Streamlit se possível, mas aqui no Python é difícil pegar.
-                # Solução Robusta: Texto Preto com contorno ou cor contrastante fixa.
-                # Vou usar PRETO para os labels dentro do gráfico pois as bolinhas verdes são claras.
-                ax.text(promovidos.Score_Tecnico.iloc[line]+0.08, promovidos.fit_cultural.iloc[line], 
-                        f"ID {promovidos.matricula.iloc[line]}", horizontalalignment='left', size='small', color='black', weight='bold')
+                # TRUQUE DE VISIBILIDADE: Texto Branco com Contorno Preto (Lê-se bem no Dark e no Light)
+                text_obj = ax.text(promovidos.Score_Tecnico.iloc[line]+0.08, promovidos.fit_cultural.iloc[line], 
+                        f"ID {promovidos.matricula.iloc[line]}", horizontalalignment='left', size='small', 
+                        color='white', weight='bold') # Texto Branco
+                text_obj.set_path_effects([pe.withStroke(linewidth=2, foreground='black')]) # Contorno Preto
+
             ax.axvline(x=promovidos['Score_Tecnico'].min(), color='#3498db', linestyle='--', alpha=0.6, label='Corte Dinâmico')
 
         ax.axhline(y=FIT_CORTE, color='#e74c3c', linestyle='--', alpha=0.6, label=f'Régua Fit ({FIT_CORTE})')
         
-        # Ajuste de eixos para usar cor padrão do tema (Transparente deixa o texto padrão do mpl visível)
-        # Mas no dark mode do Streamlit, o texto padrão do MPL (preto) some.
-        # Truque: Usar cor 'gray' para eixos/texto funciona razoavelmente em ambos.
+        # Ajuste de eixos (Usa cor 'gray' que funciona bem no escuro e no claro)
         ax.tick_params(colors='gray')
         ax.xaxis.label.set_color('gray')
         ax.yaxis.label.set_color('gray')
@@ -275,7 +266,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         ax.spines['right'].set_color('gray')
         ax.spines['left'].set_color('gray')
 
-        # Legenda com fundo semi-transparente
+        # Legenda adaptativa
         legend = ax.legend(loc='lower left', frameon=True, facecolor='white', framealpha=0.2, edgecolor='gray')
         plt.setp(legend.get_texts(), color='gray')
         
