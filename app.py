@@ -1,197 +1,175 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import altair as alt
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import MinMaxScaler
 from datetime import datetime
 
+# Configuração da Página
 st.set_page_config(page_title="People Analytics Case", layout="wide")
 
+# Título e Contexto
 st.title("📊 Dashboard de Promoção & Mérito")
 st.markdown("""
 **Contexto:** Ferramenta de apoio à decisão para alocação de mérito com base em Performance Técnica e Fit Cultural.
 **Objetivo:** Maximizar o ROI do orçamento disponível promovendo os talentos certos.
 """)
 
-# --- GERAÇÃO DE DADOS MOCK (Para funcionamento sem arquivos locais) ---
+# --- CARREGAMENTO DE DADOS ---
 @st.cache_data
-def load_mock_data():
-    np.random.seed(42)
-    n_funcionarios = 50
-    
-    # DataFrame Funcionários
-    data_func = {
-        'matricula': range(1001, 1001 + n_funcionarios),
-        'Data de Admissão': pd.date_range(start='2020-01-01', end='2024-01-01', periods=n_funcionarios),
-        'Data última promoção': pd.to_datetime([
-            np.random.choice([x, pd.NaT]) for x in pd.date_range(start='2022-01-01', end='2024-06-01', periods=n_funcionarios)
-        ]),
-        'Nível de Cargo': np.random.choice(['I', 'II', 'III', 'IV'], n_funcionarios, p=[0.3, 0.4, 0.2, 0.1])
-    }
-    df_func = pd.DataFrame(data_func)
-    
-    # DataFrame Performance
-    data_perf = {
-        'matricula': range(1001, 1001 + n_funcionarios),
-        'tarefas': np.random.randint(50, 100, n_funcionarios),   # 0-100
-        'qualidade': np.random.randint(60, 100, n_funcionarios), # 0-100
-        'reincidencia': np.random.uniform(0, 0.2, n_funcionarios), # % de erro
-        'fit_cultural': np.random.uniform(5.0, 10.0, n_funcionarios).round(1) # 0-10
-    }
-    df_perf = pd.DataFrame(data_perf)
-    
-    # Tabela Salarial
-    df_sal = pd.DataFrame({
-        'Nível de Cargo': ['I', 'II', 'III', 'IV', 'TETO'],
-        'Valor': [3000, 4500, 6500, 9000, 12000]
-    })
-    
-    # Merge inicial
-    df = pd.merge(df_func, df_perf, on='matricula', how='inner')
-    
-    # Feature Engineering de Tempo
-    ref_date = pd.to_datetime(datetime.now())
-    df['Meses_Casa'] = ((ref_date - df['Data de Admissão']) / pd.Timedelta(days=30)).fillna(0).astype(int)
-    
-    # Lógica para data de promoção vazia (assume admissão)
-    df['Data Ref Promo'] = df['Data última promoção'].fillna(df['Data de Admissão'])
-    df['Meses_Sem_Promocao'] = ((ref_date - df['Data Ref Promo']) / pd.Timedelta(days=30)).fillna(0).astype(int)
-    
-    return df, df_sal
+def load_data():
+    # Carregando os arquivos (Assumindo que estarão na mesma pasta no GitHub)
+    try:
+        df_func = pd.read_csv('basededadosnelogica.xlsx - Funcionário.csv')
+        df_perf = pd.read_csv('basededadosnelogica.xlsx - Performance.csv')
+        df_sal = pd.read_csv('basededadosnelogica.xlsx - Tabela Salarial.csv')
+        
+        # Limpeza básica
+        for col in df_func.select_dtypes(include=['object']).columns:
+            df_func[col] = df_func[col].str.strip()
+            
+        df_func['matricula'] = pd.to_numeric(df_func['matricula'], errors='coerce')
+        df_perf['matricula'] = pd.to_numeric(df_perf['matricula'], errors='coerce')
+        
+        # Merge
+        df = pd.merge(df_func, df_perf, on='matricula', how='inner')
+        
+        # Datas (Ref: 02/12/2025)
+        ref_date = pd.to_datetime('2025-12-02')
+        df['Data de Admissão'] = pd.to_datetime(df['Data de Admissão'], errors='coerce')
+        df['Data última promoção'] = pd.to_datetime(df['Data última promoção'], errors='coerce')
+        
+        # Feature Engineering de Tempo
+        df['Meses_Casa'] = ((ref_date - df['Data de Admissão']) / pd.Timedelta(days=30)).fillna(0)
+        df['Meses_Sem_Promocao'] = ((ref_date - df['Data última promoção'].fillna(df['Data de Admissão'])) / pd.Timedelta(days=30)).fillna(0)
+        
+        return df, df_sal
+    except Exception as e:
+        st.error(f"Erro ao carregar arquivos: {e}")
+        return None, None
 
-df_full, df_sal = load_mock_data()
+df_full, df_sal = load_data()
 
-# --- BARRA LATERAL ---
-st.sidebar.header("⚙️ Parâmetros de Decisão")
-budget_total = st.sidebar.number_input("Orçamento Disponível (R$)", value=15000.0, step=500.0)
-min_fit = st.sidebar.slider("Fit Cultural Mínimo", 0.0, 10.0, 7.5, 0.1)
-min_tempo_casa = st.sidebar.slider("Mínimo Meses de Casa", 0, 36, 12)
-min_tempo_promo = st.sidebar.slider("Mínimo Meses s/ Promoção", 0, 24, 12)
-
-# --- PROCESSAMENTO ---
 if df_full is not None:
-    # 1. Mapeamento Salarial
+    # --- BARRA LATERAL (CONTROLES) ---
+    st.sidebar.header("⚙️ Parâmetros de Decisão")
+    budget_total = st.sidebar.number_input("Orçamento Disponível (R$)", value=3000.0, step=100.0)
+    min_fit = st.sidebar.slider("Fit Cultural Mínimo", 0.0, 10.0, 8.0, 0.5)
+    min_tempo_casa = st.sidebar.slider("Mínimo Meses de Casa", 0, 24, 6)
+    min_tempo_promo = st.sidebar.slider("Mínimo Meses s/ Promoção", 0, 24, 12)
+
+    # --- PROCESSAMENTO (REGRAS DE NEGÓCIO) ---
+    # 1. Salários e Custos
+    df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
     sal_map = df_sal.set_index('Nível de Cargo')['Valor'].to_dict()
-    df_full['Salario_Atual'] = df_full['Nível de Cargo'].map(sal_map)
     
+    df_full['Salario_Atual'] = df_full['Nível de Cargo'].map(sal_map)
     promo_map = {'I': 'II', 'II': 'III', 'III': 'IV', 'IV': 'TETO'}
     df_full['Proximo_Nivel'] = df_full['Nível de Cargo'].map(promo_map)
     df_full['Salario_Novo'] = df_full['Proximo_Nivel'].map(sal_map)
     df_full['Custo_Aumento'] = df_full['Salario_Novo'] - df_full['Salario_Atual']
     
-    # Exclui quem já está no teto
+    # Filtrar apenas quem tem próximo nível (Exclui Teto)
     df_process = df_full.dropna(subset=['Custo_Aumento']).copy()
 
-    # 2. Score Técnico (Normalização Simplificada)
-    # Normalizando entre 0 e 10 manualmente para evitar dependência do sklearn no exemplo simples
-    def normalize(series):
-        return (series - series.min()) / (series.max() - series.min()) * 10
+    # 2. Score Técnico
+    scaler = MinMaxScaler(feature_range=(0, 10))
+    df_process['reincidencia_inv'] = 1 - df_process['reincidencia']
+    cols_norm = ['tarefas', 'qualidade', 'reincidencia_inv']
+    norm_data = scaler.fit_transform(df_process[cols_norm])
+    df_process[['n_t', 'n_q', 'n_r']] = norm_data
     
-    df_process['n_t'] = normalize(df_process['tarefas'])
-    df_process['n_q'] = normalize(df_process['qualidade'])
-    df_process['n_r'] = normalize(1 - df_process['reincidencia']) # Inverso pois reincidencia é ruim
-    
+    # Pesos
     df_process['Score_Tecnico'] = (0.4 * df_process['n_q']) + (0.3 * df_process['n_t']) + (0.3 * df_process['n_r'])
-    df_process['Score_Tecnico'] = df_process['Score_Tecnico'].fillna(0)
 
-    # 3. Status e Regras
+    # 3. Definição de Status
     df_process['Status'] = 'Não Elegível'
-
-    # Elegíveis
+    
+    # Regra de Elegibilidade
     mask_elegivel = (
         (df_process['fit_cultural'] >= min_fit) & 
         (df_process['Meses_Casa'] >= min_tempo_casa) & 
         (df_process['Meses_Sem_Promocao'] >= min_tempo_promo)
     )
     df_process.loc[mask_elegivel, 'Status'] = 'Elegível'
-
-    # Hold (High Potentials barrados por tempo)
+    
+    # Regra de "Barrados pelo Tempo" (High Potential)
     mask_barrado = (
         (df_process['fit_cultural'] >= min_fit) & 
         ((df_process['Meses_Casa'] < min_tempo_casa) | (df_process['Meses_Sem_Promocao'] < min_tempo_promo)) & 
-        (df_process['Score_Tecnico'] > 7.0)
+        (df_process['Score_Tecnico'] > 7)
     )
     df_process.loc[mask_barrado, 'Status'] = 'Hold (Tempo)'
 
-    # 4. Distribuição do Budget (Algoritmo Guloso)
+    # 4. Seleção Orçamentária
     candidatos = df_process[df_process['Status'] == 'Elegível'].sort_values('Score_Tecnico', ascending=False).copy()
     candidatos['Custo_Acumulado'] = candidatos['Custo_Aumento'].cumsum()
-    
     promovidos = candidatos[candidatos['Custo_Acumulado'] <= budget_total].copy()
-    ids_promovidos = promovidos['matricula'].tolist()
     
+    ids_promovidos = promovidos['matricula'].tolist()
     df_process.loc[df_process['matricula'].isin(ids_promovidos), 'Status'] = 'Promovido'
 
-    # --- KPI DISPLAY ---
+    # --- DASHBOARD VISUAL ---
+    
+    # KPIs
     col1, col2, col3, col4 = st.columns(4)
-    custo_promo = promovidos['Custo_Aumento'].sum()
-    
-    col1.metric("Pessoas Promovidas", len(promovidos))
-    col2.metric("Custo Total", f"R$ {custo_promo:,.2f}")
-    col3.metric("Sobras do Budget", f"R$ {(budget_total - custo_promo):,.2f}", 
-                delta_color="normal" if (budget_total - custo_promo) > 0 else "inverse")
-    
-    score_medio = promovidos['Score_Tecnico'].mean() if not promovidos.empty else 0
-    col4.metric("Score Técnico Médio", f"{score_medio:.2f}")
+    col1.metric("Colaboradores Promovidos", len(promovidos))
+    col2.metric("Custo Total", f"R$ {promovidos['Custo_Aumento'].sum():.2f}")
+    col3.metric("Sobras do Budget", f"R$ {(budget_total - promovidos['Custo_Aumento'].sum()):.2f}")
+    col4.metric("Score Técnico Médio (Promovidos)", f"{promovidos['Score_Tecnico'].mean():.2f}")
 
-    st.divider()
+    st.markdown("---")
 
-    # --- VISUALIZAÇÃO (ALTAIR) ---
+    # Gráfico Principal
     col_graf, col_tab = st.columns([2, 1])
 
     with col_graf:
-        st.subheader("Matriz de Decisão (Interativa)")
+        st.subheader("Matriz de Decisão (9-Box Adaptado)")
+        fig, ax = plt.subplots(figsize=(10, 6))
         
-        # Cores customizadas
-        domain = ['Não Elegível', 'Hold (Tempo)', 'Elegível', 'Promovido']
-        range_ = ['#e0e0e0', '#f39c12', '#95a5a6', '#27ae60']
-        
-        chart = alt.Chart(df_process).mark_circle(size=100).encode(
-            x=alt.X('Score_Tecnico', title='Score Técnico (0-10)', scale=alt.Scale(domain=[0, 10])),
-            y=alt.Y('fit_cultural', title='Fit Cultural (0-10)', scale=alt.Scale(domain=[0, 10])),
-            color=alt.Color('Status', scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(title="Status Final")),
-            tooltip=['matricula', 'Nível de Cargo', 'Meses_Casa', 'Score_Tecnico', 'fit_cultural', 'Custo_Aumento']
-        ).interactive()
+        # Plot Layers
+        sns.scatterplot(data=df_process[df_process['Status']=='Não Elegível'], x='Score_Tecnico', y='fit_cultural', 
+                        color='lightgray', s=50, alpha=0.5, label='Outros', ax=ax)
+        sns.scatterplot(data=df_process[df_process['Status']=='Hold (Tempo)'], x='Score_Tecnico', y='fit_cultural', 
+                        color='orange', s=100, marker='s', label='Hold (Tempo)', ax=ax)
+        sns.scatterplot(data=df_process[df_process['Status']=='Elegível'], x='Score_Tecnico', y='fit_cultural', 
+                        color='gray', s=80, label='Elegível (Sem Budget)', ax=ax)
+        sns.scatterplot(data=df_process[df_process['Status']=='Promovido'], x='Score_Tecnico', y='fit_cultural', 
+                        color='#27ae60', s=200, edgecolor='black', label='PROMOVIDO', ax=ax)
 
-        # Linha de corte do Fit
-        rule = alt.Chart(pd.DataFrame({'y': [min_fit]})).mark_rule(color='red', strokeDash=[5, 5]).encode(y='y')
+        # Labels
+        for _, row in df_process[df_process['Status']=='Promovido'].iterrows():
+            ax.text(row['Score_Tecnico']+0.1, row['fit_cultural'], f"ID {int(row['matricula'])}", fontweight='bold')
+
+        # Linhas de Corte
+        ax.axhline(min_fit, color='red', linestyle='--', alpha=0.5, label=f'Corte Fit ({min_fit})')
         
-        st.altair_chart(chart + rule, use_container_width=True)
+        ax.set_title("Performance Técnica vs Alinhamento Cultural", fontsize=12)
+        ax.set_xlabel("Score Técnico (0-10)")
+        ax.set_ylabel("Fit Cultural")
+        ax.legend(loc='lower left')
+        st.pyplot(fig)
 
     with col_tab:
-        st.subheader("Lista Final")
-        if not promovidos.empty:
-            display_cols = ['matricula', 'Nível de Cargo', 'Score_Tecnico', 'Custo_Aumento']
-            st.dataframe(
-                promovidos[display_cols].style.format({
-                    'Score_Tecnico': '{:.2f}', 
-                    'Custo_Aumento': 'R$ {:.2f}'
-                }), 
-                use_container_width=True,
-                hide_index=True
-            )
-        else:
-            st.info("Ninguém foi promovido com os critérios atuais.")
+        st.subheader("Lista Final de Promoção")
+        st.dataframe(
+            promovidos[['matricula', 'Nível de Cargo', 'Proximo_Nivel', 'Meses_Casa', 'Score_Tecnico', 'Custo_Aumento']]
+            .style.format({'Score_Tecnico': '{:.2f}', 'Custo_Aumento': 'R$ {:.2f}', 'Meses_Casa': '{:.1f}'}),
+            use_container_width=True,
+            hide_index=True
+        )
 
-    # --- WATCHLIST ---
-    st.divider()
-    st.subheader("🚩 Watchlist & Riscos")
+    # --- ANÁLISE DETALHADA ---
+    st.markdown("---")
+    st.subheader("🚩 Pontos de Atenção (Watchlist)")
+    col_hold1, col_hold2 = st.columns(2)
     
-    col_risk1, col_risk2 = st.columns(2)
-    
-    with col_risk1:
-        st.markdown("**High Potentials em 'Hold' (Risco de Saída)**")
-        df_hold = df_process[df_process['Status'] == 'Hold (Tempo)']
-        if not df_hold.empty:
-            st.dataframe(df_hold[['matricula', 'Score_Tecnico', 'Meses_Casa', 'Meses_Sem_Promocao']])
-        else:
-            st.success("Nenhum talento retido por tempo.")
-
-    with col_risk2:
-        st.markdown("**Distribuição por Nível**")
-        if not df_process.empty:
-            chart_bar = alt.Chart(df_process).mark_bar().encode(
-                x='Nível de Cargo',
-                y='count()',
-                color='Status'
-            )
-            st.altair_chart(chart_bar, use_container_width=True)
+    with col_hold1:
+        st.markdown("**Top Talents Barrados por Tempo (Risco de Retenção):**")
+        st.dataframe(df_process[df_process['Status']=='Hold (Tempo)'][['matricula', 'Score_Tecnico', 'Meses_Casa', 'Meses_Sem_Promocao']])
+        
+    with col_hold2:
+        st.markdown("**Análise por Nível de Senioridade (Média):**")
+        nivel_stats = df_process.groupby('Nível de Cargo', observed=False)[['Score_Tecnico', 'fit_cultural']].mean()
+        st.dataframe(nivel_stats.style.background_gradient(cmap='Blues'))
