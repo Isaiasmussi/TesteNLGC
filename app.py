@@ -199,7 +199,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     <div class="dashboard-card">
         <div class="card-title">1. Premissas & Metodologia</div>
         <div class="card-text">
-            Este modelo utiliza um algoritmo multicritério para garantir meritocracia.
+            Este modelo utiliza um algoritmo multicritério para garantir a produtividade.
             <br><br>
             <strong>Critérios de Corte (Gatekeepers):</strong><br>
             • <strong>Fit Cultural ≥ 8.0:</strong> Priorizamos o alinhamento comportamental e de valores. A premissa é que hard skills podem ser desenvolvidas com treinamento eficaz, enquanto a dissonância cultural é de difícil correção e alto custo. Um Fit Cultural baixo compromete a sinergia da equipe e pode erodir o clima organizacional a longo prazo.<br>
