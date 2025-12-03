@@ -97,40 +97,51 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         st.warning("⚠️ Base vazia. Verifique números na tabela salarial.")
         st.stop()
 
-    # --- 3. SCORE TÉCNICO (NOVA LÓGICA) ---
-    # Removido 'tarefas', adicionado 'avaliacao_gestor'
-    cols_calc = ['avaliacao_gestor', 'qualidade', 'reincidencia', 'fit_cultural']
-    
+    # --- 3. SCORE TÉCNICO (FÓRMULA NELOGICA) ---
+    cols_calc = ['tarefas', 'qualidade', 'reincidencia', 'avaliacao_gestor', 'fit_cultural']
     for col in cols_calc:
         if col in df_elegiveis.columns:
+            # Limpeza de moeda/string
             df_elegiveis[col] = df_elegiveis[col].astype(str).str.replace(',', '.')
             df_elegiveis[col] = pd.to_numeric(df_elegiveis[col], errors='coerce').fillna(0)
-    
-    scaler = MinMaxScaler(feature_range=(0, 10))
-    
-    # Inversão Reincidência
-    df_elegiveis['reincidencia_score'] = df_elegiveis['reincidencia'] * -1 
 
-    # Normalização
-    cols_norm_input = ['avaliacao_gestor', 'qualidade', 'reincidencia_score']
-    cols_norm_output = ['avaliacao_gestor_n', 'qualidade_n', 'reincidencia_score_n']
-    
-    dados_norm = scaler.fit_transform(df_elegiveis[cols_norm_input])
-    df_norm = pd.DataFrame(dados_norm, columns=cols_norm_output, index=df_elegiveis.index)
-    df_elegiveis = pd.concat([df_elegiveis, df_norm], axis=1)
+    # A) NOTA DE PRODUTIVIDADE (30%)
+    # Regra: (Tarefas / Máximo do Time) * 10
+    max_tarefas = df_elegiveis['tarefas'].max()
+    if max_tarefas == 0: max_tarefas = 1 # Evitar divisão por zero
+    df_elegiveis['nota_produtividade'] = (df_elegiveis['tarefas'] / max_tarefas) * 10
 
-    # Cálculo Score (40% Quali / 30% Gestor / 30% Reincidência)
-    df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade_n'] * 0.40) + \
-                                    (df_elegiveis['avaliacao_gestor_n'] * 0.30) + \
-                                    (df_elegiveis['reincidencia_score_n'] * 0.30)
+    # B) NOTA DE EFICIÊNCIA (20%)
+    # Regra: (1 - Taxa Reincidência) * 10
+    # Auto-correção: Se reincidência vier como 5 (5%), divide por 100 virar 0.05
+    if df_elegiveis['reincidencia'].max() > 1.0:
+        df_elegiveis['reincidencia'] = df_elegiveis['reincidencia'] / 100.0
+    
+    df_elegiveis['nota_eficiencia'] = (1 - df_elegiveis['reincidencia']) * 10
+    # Garante que não fique negativo nem maior que 10
+    df_elegiveis['nota_eficiencia'] = df_elegiveis['nota_eficiencia'].clip(0, 10)
+
+    # C) NOTA DE QUALIDADE (30%) E GESTOR (20%)
+    # Assumindo que já vem em escala 0-10. Se vier 0-100, ajustamos.
+    if df_elegiveis['qualidade'].max() > 10:
+        df_elegiveis['qualidade'] = df_elegiveis['qualidade'] / 10.0
+        
+    if df_elegiveis['avaliacao_gestor'].max() > 10:
+        df_elegiveis['avaliacao_gestor'] = df_elegiveis['avaliacao_gestor'] / 10.0
+
+    # --- CÁLCULO FINAL DO SCORE ---
+    # 30% Qualidade + 30% Produtividade + 20% Gestor + 20% Eficiência
+    df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade'] * 0.30) + \
+                                    (df_elegiveis['nota_produtividade'] * 0.30) + \
+                                    (df_elegiveis['avaliacao_gestor'] * 0.20) + \
+                                    (df_elegiveis['nota_eficiencia'] * 0.20)
 
     # --- 4. DASHBOARD ---
     st.sidebar.title("Painel de Controle")
     budget_total = st.sidebar.number_input("Budget (R$)", value=3000.0, step=100.0)
-    
-    # Régua Cultural (Gatekeeper)
     fit_corte = st.sidebar.slider("Régua Fit Cultural", 8.0, 10.0, 8.0) 
 
+    # Filtros de Elegibilidade
     mask_promocao = (
         (df_elegiveis['fit_cultural'] >= fit_corte) & 
         (df_elegiveis['Meses_Casa'] >= 12)
@@ -142,12 +153,14 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     candidatos['Custo_Acumulado'] = candidatos['Custo_Aumento'].cumsum()
     promovidos = candidatos[candidatos['Custo_Acumulado'] <= budget_total].copy()
 
+    # Definição de Status
     df_elegiveis['Status'] = 'Não Elegível'
     df_elegiveis.loc[mask_promocao, 'Status'] = 'Elegível (Budget Insuficiente)' 
     df_elegiveis.loc[df_elegiveis['Meses_Casa'] < 12, 'Status'] = 'Em Maturação (<12m)'
     df_elegiveis.loc[df_elegiveis['matricula'].isin(promovidos['matricula']), 'Status'] = 'PROMOVIDO'
 
-    st.markdown("### Matriz de Decisão: Performance x Cultura")
+    st.markdown("### Matriz de Decisão: Fórmula Nelogica")
+    st.caption("Score = 30% Qualidade + 30% Produtividade (Volume) + 20% Gestor + 20% Eficiência (Sem Erros)")
     
     kpi1, kpi2, kpi3 = st.columns(3)
     kpi1.markdown(f'<div class="metric-container"><label class="metric-label">Promovidos</label><div class="metric-value">{len(promovidos)}</div></div>', unsafe_allow_html=True)
@@ -162,13 +175,15 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         fig, ax = plt.subplots(figsize=(12, 7))
         sns.set_style("whitegrid")
 
-        # Plots
+        # Plot 1: Resto
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
                         x='Score_Tecnico', y='fit_cultural', color='grey', alpha=0.3, s=60, label='Outros', ax=ax)
         
+        # Plot 2: Maturação
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
                         x='Score_Tecnico', y='fit_cultural', color='orange', alpha=0.5, s=80, marker='X', label='< 12 Meses', ax=ax)
 
+        # Plot 3: Promovidos
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
                             color='#2ecc71', s=150, edgecolor='black', label='Promovidos', ax=ax)
@@ -177,18 +192,17 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                         f"ID {promovidos.matricula.iloc[line]}", horizontalalignment='left', size='small', color='black', weight='semibold')
             ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5, label='Corte Dinâmico')
 
-        ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Régua ({fit_corte})')
+        ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Régua Fit ({fit_corte})')
         ax.legend(loc='lower left', frameon=True)
-        # Atualizei o label do eixo X
-        ax.set_xlabel("Score Técnico (Qualidade + Gestor + Baixa Reincidência)")
+        ax.set_xlabel("Score Técnico (Qualidade + Produtividade + Gestor + Eficiência)")
         ax.set_ylabel("Fit Cultural (Avaliação Gestor)")
         fig.tight_layout()
         st.pyplot(fig, use_container_width=True)
 
     with col_table:
-        st.markdown("#### Lista de Promoção")
+        st.markdown("#### Lista de Promoção (Top Performance)")
         if not promovidos.empty:
-            st.dataframe(promovidos[['matricula', 'Meses_Casa', 'Proximo_Nivel', 'Score_Tecnico', 'Custo_Aumento']].style.format({'Score_Tecnico': '{:.2f}', 'Custo_Aumento': 'R$ {:.2f}'}).background_gradient(subset=['Score_Tecnico'], cmap='Greens'), use_container_width=True, height=450, hide_index=True)
+            st.dataframe(promovidos[['matricula', 'Meses_Casa', 'Proximo_Nivel', 'Score_Tecnico', 'tarefas']].style.format({'Score_Tecnico': '{:.2f}', 'tarefas': '{:.0f}'}).background_gradient(subset=['Score_Tecnico'], cmap='Greens'), use_container_width=True, height=450, hide_index=True)
         else:
             st.warning("Ninguém elegível.")
 else:
