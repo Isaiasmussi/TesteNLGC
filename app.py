@@ -56,12 +56,13 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     
     df = pd.merge(df_func, df_perf, on='matricula', how='inner')
     
-    # --- CORREÇÃO DO ERRO DE DATA (TELA VERMELHA) ---
+    # --- CORREÇÃO 1: CÁLCULO DE DATA SEGURO ---
     col_admissao = 'Data de Admissão'
     if col_admissao in df.columns:
         df[col_admissao] = pd.to_datetime(df[col_admissao], errors='coerce')
         agora = pd.Timestamp.now()
-        # Cálculo seguro: Dias totais / média de dias no mês
+        # Fix: Calcula diferença em DIAS e divide pela média (30.44)
+        # Isso evita o erro "timedelta64(1, 'M')"
         df['dias_casa'] = (agora - df[col_admissao]).dt.days
         df['Meses_Casa'] = (df['dias_casa'] / 30.44).fillna(0).astype(int)
     else:
@@ -70,17 +71,24 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
 
     # --- 2. ENGENHARIA DE SALÁRIOS ---
     if not df_sal.empty and 'Nível de Cargo' in df.columns:
-        # Padronização para Texto
         df_sal['Nível de Cargo'] = df_sal['Nível de Cargo'].astype(str).str.strip()
         df['Nível de Cargo'] = df['Nível de Cargo'].astype(str).str.strip()
         
+        # --- CORREÇÃO 2: LIMPEZA DE MOEDA (R$, PONTO, VÍRGULA) ---
+        # Se vier "R$ 2.500,00", o to_numeric falha. Precisamos limpar antes.
+        if df_sal['Valor'].dtype == 'O': # Se for objeto (string)
+            df_sal['Valor'] = df_sal['Valor'].astype(str).str.replace('R$', '', regex=False)
+            df_sal['Valor'] = df_sal['Valor'].str.replace('.', '', regex=False) # Tira ponto de milhar
+            df_sal['Valor'] = df_sal['Valor'].str.replace(',', '.', regex=False) # Troca vírgula decimal
+            
         df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
+        
+        # Cria mapa salarial (Agrupando para evitar duplicatas)
         df_sal_map = df_sal.groupby('Nível de Cargo')['Valor'].mean().to_dict()
         
         df['Salario_Atual'] = df['Nível de Cargo'].map(df_sal_map)
         
-        # --- MAPA DE PROMOÇÃO (AQUI PODE ESTAR O ERRO DA BASE VAZIA) ---
-        # Verifique se seus níveis são I, II, III ou 1, 2, 3 ou Jr, Pl, Sr
+        # Mapa de Promoção
         mapa_promocao = {'I': 'II', 'II': 'III', 'III': 'IV', 'IV': 'TETO'}
         
         df['Proximo_Nivel'] = df['Nível de Cargo'].map(mapa_promocao)
@@ -92,20 +100,8 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         st.error("Tabelas salariais ou coluna 'Nível de Cargo' ausentes.")
         st.stop()
 
-    # --- DIAGNÓSTICO DE BASE VAZIA ---
     if df_elegiveis.empty:
-        st.warning("⚠️ Base vazia após cálculo salarial. O cruzamento falhou.")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Níveis encontrados nos Funcionários:**")
-            st.write(df['Nível de Cargo'].unique())
-        
-        with col2:
-            st.markdown("**Níveis encontrados na Tabela Salarial:**")
-            st.write(list(df_sal_map.keys()))
-            
-        st.info("💡 **Dica:** Os nomes acima precisam ser IDÊNTICOS. Se um for 'Analista I' e o outro for só 'I', o sistema não cruza. Ajuste o 'mapa_promocao' no código se necessário.")
+        st.warning("⚠️ Base vazia. Verifique se a coluna de VALOR na tabela salarial tem números válidos.")
         st.stop()
 
     # --- 3. SCORE TÉCNICO (40/30/30) ---
@@ -132,6 +128,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     budget_total = st.sidebar.number_input("Budget (R$)", value=3000.0, step=100.0)
     fit_corte = st.sidebar.slider("Régua Fit Cultural", 8.0, 10.0, 8.0) 
 
+    # FILTRO: Meses >= 12 e Fit >= Corte
     mask_promocao = (
         (df_elegiveis['fit_cultural'] >= fit_corte) & 
         (df_elegiveis['Meses_Casa'] >= 12)
@@ -163,7 +160,6 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         fig, ax = plt.subplots(figsize=(12, 7))
         sns.set_style("whitegrid")
 
-        # Plots
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
                         x='Score_Tecnico', y='fit_cultural', color='grey', alpha=0.3, s=60, label='Outros', ax=ax)
         
