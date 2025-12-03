@@ -131,13 +131,19 @@ if df_full is not None and not df_full.empty:
 
     required_cols = ['tarefas', 'qualidade', 'reincidencia']
     if all(col in df_process.columns for col in required_cols):
+        # --- CORREÇÃO AQUI: Converter para numérico ANTES de calcular ---
+        for col in required_cols:
+             # Garante que strings com vírgula sejam tratadas (ex: "0,5" -> "0.5") caso venha assim do Google Sheets
+            if df_process[col].dtype == 'object':
+                 df_process[col] = df_process[col].astype(str).str.replace(',', '.')
+            df_process[col] = pd.to_numeric(df_process[col], errors='coerce').fillna(0)
+        
+        # Agora a subtração funcionará pois 'reincidencia' já é número
         scaler = MinMaxScaler(feature_range=(0, 10))
         df_process['reincidencia_inv'] = 1 - df_process['reincidencia']
         
+        # Normalização com Scaler
         cols_norm = ['tarefas', 'qualidade', 'reincidencia_inv']
-        for col in cols_norm:
-            df_process[col] = pd.to_numeric(df_process[col], errors='coerce').fillna(0)
-
         df_process[['n_t', 'n_q', 'n_r']] = scaler.fit_transform(df_process[cols_norm])
         df_process['Score_Tecnico'] = (0.4 * df_process['n_q']) + (0.3 * df_process['n_t']) + (0.3 * df_process['n_r'])
     else:
