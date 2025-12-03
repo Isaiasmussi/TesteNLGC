@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import MinMaxScaler
 import requests
+from datetime import datetime
 
 st.set_page_config(page_title="Executive Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -22,6 +23,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- 1. CARREGAMENTO E TRATAMENTO INICIAL ---
 @st.cache_data(ttl=600)
 def load_data():
     api_url = "https://script.google.com/macros/s/AKfycbxHG51T-YJi8XpY1ZFmJ-YvNHO_OLxNA6TGp6BnUY_R539HsQW7bVpEth23TShRdqV1/exec"
@@ -48,11 +50,27 @@ df_func, df_perf, df_sal = load_data()
 
 if df_func is not None and not df_func.empty and not df_perf.empty:
 
+    # --- TRATAMENTO DE CHAVES ---
     df_func['matricula'] = df_func['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     df_perf['matricula'] = df_perf['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     
     df = pd.merge(df_func, df_perf, on='matricula', how='inner')
     
+    # --- NOVA REGRA: CÁLCULO DE TEMPO DE CASA (MESES) ---
+    # Tenta encontrar a coluna de admissão com variações comuns de nome
+    col_admissao = next((col for col in df.columns if col.lower() in ['admissao', 'data_admissao', 'data admissao', 'inicio']), None)
+    
+    if col_admissao:
+        df[col_admissao] = pd.to_datetime(df[col_admissao], errors='coerce')
+        agora = pd.Timestamp.now()
+        # Calcula diferença em meses
+        df['Meses_Casa'] = (agora - df[col_admissao]) / np.timedelta64(1, 'M')
+        df['Meses_Casa'] = df['Meses_Casa'].fillna(0).astype(int)
+    else:
+        st.error("Coluna de Data de Admissão não encontrada. O filtro de 12 meses não poderá ser aplicado.")
+        df['Meses_Casa'] = 0
+
+    # --- 2. ENGENHARIA DE SALÁRIOS ---
     if not df_sal.empty:
         df_sal['Nível de Cargo'] = df_sal['Nível de Cargo'].astype(str).str.strip()
         df['Nível de Cargo'] = df['Nível de Cargo'].astype(str).str.strip()
@@ -72,9 +90,10 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         st.stop()
 
     if df_elegiveis.empty:
-        st.warning("Base vazia após cálculo salarial. Verifique os nomes dos cargos.")
+        st.warning("Base vazia após cálculo salarial.")
         st.stop()
 
+    # --- 3. ENGENHARIA DO SCORE TÉCNICO (REGRA: 40% Quali, 30% Vol, 30% Reincidência) ---
     cols_calc = ['tarefas', 'qualidade', 'reincidencia', 'fit_cultural']
     for col in cols_calc:
         if col in df_elegiveis.columns:
@@ -82,30 +101,51 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
             df_elegiveis[col] = pd.to_numeric(df_elegiveis[col], errors='coerce').fillna(0)
 
     scaler = MinMaxScaler(feature_range=(0, 10))
-    df_elegiveis['reincidencia_score'] = 1 - df_elegiveis['reincidencia']
+    
+    # Inverte a reincidência (Menor é melhor) -> 1 - valor (assumindo que seja %)
+    # Se reincidência for contagem absoluta (ex: 5 erros), o MinMaxScaler abaixo cuidará da escala, 
+    # mas precisamos garantir a inversão de polaridade.
+    df_elegiveis['reincidencia_invertida'] = df_elegiveis['reincidencia'] * -1 
 
-    cols_norm = ['tarefas', 'qualidade', 'reincidencia_score']
+    cols_norm = ['tarefas', 'qualidade', 'reincidencia_invertida']
     dados_norm = scaler.fit_transform(df_elegiveis[cols_norm])
     df_norm = pd.DataFrame(dados_norm, columns=[c+'_n' for c in cols_norm], index=df_elegiveis.index)
     
     df_elegiveis = pd.concat([df_elegiveis, df_norm], axis=1)
 
-    df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade_n'] * 0.4) + \
-                                    (df_elegiveis['tarefas_n'] * 0.3) + \
-                                    (df_elegiveis['reincidencia_score_n'] * 0.3)
+    # AQUI APLICA A TUA LÓGICA DE PESOS
+    df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade_n'] * 0.40) + \
+                                    (df_elegiveis['tarefas_n'] * 0.30) + \
+                                    (df_elegiveis['reincidencia_invertida_n'] * 0.30)
 
+    # --- 4. DASHBOARD E FILTROS FINAIS ---
     st.sidebar.title("Painel de Controle")
     budget_total = st.sidebar.number_input("Budget (R$)", value=3000.0, step=100.0)
-    fit_corte = st.sidebar.slider("Corte Fit Cultural", 0.0, 10.0, 8.0)
+    
+    # Slider começa em 8.0 pq é tua regra de negócio mínima
+    fit_corte = st.sidebar.slider("Corte Fit Cultural (Min 8.0)", 8.0, 10.0, 8.0) 
 
-    candidatos = df_elegiveis[(df_elegiveis['fit_cultural'] >= fit_corte)].copy()
+    # --- APLICANDO OS FILTROS DE NEGÓCIO ---
+    # 1. Fit >= Corte (que já é min 8)
+    # 2. Meses de Casa >= 12
+    mask_promocao = (
+        (df_elegiveis['fit_cultural'] >= fit_corte) & 
+        (df_elegiveis['Meses_Casa'] >= 12)
+    )
+    
+    candidatos = df_elegiveis[mask_promocao].copy()
     candidatos = candidatos.sort_values(by='Score_Tecnico', ascending=False)
 
     candidatos['Custo_Acumulado'] = candidatos['Custo_Aumento'].cumsum()
     promovidos = candidatos[candidatos['Custo_Acumulado'] <= budget_total].copy()
 
+    # Definindo Status para o Gráfico
     df_elegiveis['Status'] = 'Não Elegível'
-    df_elegiveis.loc[df_elegiveis['fit_cultural'] >= fit_corte, 'Status'] = 'Elegível (Budget Insuficiente)'
+    # Quem tem Fit e Tempo, mas não coube no bolso
+    df_elegiveis.loc[mask_promocao, 'Status'] = 'Elegível (Budget Insuficiente)' 
+    # Quem não tem tempo de casa
+    df_elegiveis.loc[df_elegiveis['Meses_Casa'] < 12, 'Status'] = 'Em Maturação (<12m)'
+    # Quem foi promovido de fato
     df_elegiveis.loc[df_elegiveis['matricula'].isin(promovidos['matricula']), 'Status'] = 'PROMOVIDO'
 
     st.markdown("### Matriz de Decisão: Performance x Cultura")
@@ -121,19 +161,23 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     col_chart, col_table = st.columns([1.8, 1])
 
     with col_chart:
-        # Aumentei a altura para evitar o achatamento visual
         fig, ax = plt.subplots(figsize=(12, 7))
         sns.set_style("whitegrid")
 
-        # Plot dos não promovidos
-        sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] != 'PROMOVIDO'], 
+        # Plot dos não elegíveis (geral)
+        sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
                         x='Score_Tecnico', y='fit_cultural', 
-                        color='grey', alpha=0.3, s=60, label='Elegíveis/Resto', ax=ax)
+                        color='grey', alpha=0.3, s=60, label='Outros', ax=ax)
+        
+        # Plot dos "Em maturação" (para visualizares quem tu perdeu por tempo de casa)
+        sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
+                        x='Score_Tecnico', y='fit_cultural', 
+                        color='orange', alpha=0.4, s=60, marker='X', label='< 12 Meses', ax=ax)
 
-        # Plot dos promovidos (destaque)
+        # Plot dos promovidos
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
-                            color='#2ecc71', s=150, edgecolor='black', label='Promover (Top Pick)', ax=ax)
+                            color='#2ecc71', s=150, edgecolor='black', label='Promovidos', ax=ax)
 
             for line in range(0, promovidos.shape[0]):
                 ax.text(promovidos.Score_Tecnico.iloc[line]+0.05, 
@@ -143,37 +187,29 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
             
             ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5, label='Corte Técnico')
 
-        ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Corte Cultural ({fit_corte})')
-        
-        # Ajuste da legenda para não cobrir os dados
+        ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Min Cultura ({fit_corte})')
         ax.legend(loc='lower left', frameon=True)
-        
-        # Labels mais claros
         ax.set_xlabel("Score Técnico (0-10)", fontsize=10)
         ax.set_ylabel("Fit Cultural (0-10)", fontsize=10)
-
-        # Garante que tudo caiba na figura antes de enviar pro Streamlit
         fig.tight_layout()
-        
-        # use_container_width=True é essencial para layouts wide
         st.pyplot(fig, use_container_width=True)
 
     with col_table:
         st.markdown("#### Lista de Promoção")
         if not promovidos.empty:
             st.dataframe(
-                promovidos[['matricula', 'Nível de Cargo', 'Proximo_Nivel', 'Score_Tecnico', 'Custo_Aumento']]
+                promovidos[['matricula', 'Meses_Casa', 'Proximo_Nivel', 'Score_Tecnico', 'Custo_Aumento']]
                 .style.format({
                     'Score_Tecnico': '{:.2f}', 
                     'Custo_Aumento': 'R$ {:.2f}'
                 })
                 .background_gradient(subset=['Score_Tecnico'], cmap='Greens'),
                 use_container_width=True,
-                height=450, # Aumentei um pouco para alinhar com o gráfico
+                height=450,
                 hide_index=True
             )
         else:
-            st.warning("Ninguém elegível dentro do budget.")
+            st.warning("Ninguém elegível (Fit < 8 ou Tempo < 12m).")
 
 else:
     st.info("Aguardando carregamento da API...")
