@@ -56,13 +56,12 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     
     df = pd.merge(df_func, df_perf, on='matricula', how='inner')
     
-    # --- CORREÇÃO 1: CÁLCULO DE DATA SEGURO ---
+    # --- CÁLCULO DE TEMPO DE CASA (BLINDADO) ---
     col_admissao = 'Data de Admissão'
     if col_admissao in df.columns:
         df[col_admissao] = pd.to_datetime(df[col_admissao], errors='coerce')
         agora = pd.Timestamp.now()
-        # Fix: Calcula diferença em DIAS e divide pela média (30.44)
-        # Isso evita o erro "timedelta64(1, 'M')"
+        # Cálculo seguro: Dias totais / média de dias no mês (30.44)
         df['dias_casa'] = (agora - df[col_admissao]).dt.days
         df['Meses_Casa'] = (df['dias_casa'] / 30.44).fillna(0).astype(int)
     else:
@@ -74,16 +73,15 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         df_sal['Nível de Cargo'] = df_sal['Nível de Cargo'].astype(str).str.strip()
         df['Nível de Cargo'] = df['Nível de Cargo'].astype(str).str.strip()
         
-        # --- CORREÇÃO 2: LIMPEZA DE MOEDA (R$, PONTO, VÍRGULA) ---
-        # Se vier "R$ 2.500,00", o to_numeric falha. Precisamos limpar antes.
-        if df_sal['Valor'].dtype == 'O': # Se for objeto (string)
+        # Limpeza de Moeda (R$, Ponto, Vírgula)
+        if df_sal['Valor'].dtype == 'O': 
             df_sal['Valor'] = df_sal['Valor'].astype(str).str.replace('R$', '', regex=False)
             df_sal['Valor'] = df_sal['Valor'].str.replace('.', '', regex=False) # Tira ponto de milhar
             df_sal['Valor'] = df_sal['Valor'].str.replace(',', '.', regex=False) # Troca vírgula decimal
             
         df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
         
-        # Cria mapa salarial (Agrupando para evitar duplicatas)
+        # Cria mapa salarial 
         df_sal_map = df_sal.groupby('Nível de Cargo')['Valor'].mean().to_dict()
         
         df['Salario_Atual'] = df['Nível de Cargo'].map(df_sal_map)
@@ -112,6 +110,9 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
             df_elegiveis[col] = pd.to_numeric(df_elegiveis[col], errors='coerce').fillna(0)
 
     scaler = MinMaxScaler(feature_range=(0, 10))
+    
+    # Inversão: Multiplicar por -1 mantém a relação ordinal correta para o Scaler
+    # (0 vira 0, 10 vira -10. O scaler bota 0 como nota 10 e -10 como nota 0)
     df_elegiveis['reincidencia_score'] = df_elegiveis['reincidencia'] * -1 
 
     cols_norm = ['tarefas', 'qualidade', 'reincidencia_score']
@@ -119,6 +120,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     df_norm = pd.DataFrame(dados_norm, columns=[c+'_n' for c in cols_norm], index=df_elegiveis.index)
     df_elegiveis = pd.concat([df_elegiveis, df_norm], axis=1)
 
+    # PESOS (Idêntico ao teu script)
     df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade_n'] * 0.40) + \
                                     (df_elegiveis['tarefas_n'] * 0.30) + \
                                     (df_elegiveis['reincidencia_score_n'] * 0.30)
@@ -128,7 +130,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     budget_total = st.sidebar.number_input("Budget (R$)", value=3000.0, step=100.0)
     fit_corte = st.sidebar.slider("Régua Fit Cultural", 8.0, 10.0, 8.0) 
 
-    # FILTRO: Meses >= 12 e Fit >= Corte
+    # FILTRO DUPLO: Meses >= 12 E Fit >= Corte
     mask_promocao = (
         (df_elegiveis['fit_cultural'] >= fit_corte) & 
         (df_elegiveis['Meses_Casa'] >= 12)
@@ -160,19 +162,22 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         fig, ax = plt.subplots(figsize=(12, 7))
         sns.set_style("whitegrid")
 
+        # Plot 1: Não Promovidos (Cinza)
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
                         x='Score_Tecnico', y='fit_cultural', color='grey', alpha=0.3, s=60, label='Outros', ax=ax)
         
+        # Plot 2: Maturação (Laranja) - Quem tem score mas tem pouco tempo
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
                         x='Score_Tecnico', y='fit_cultural', color='orange', alpha=0.5, s=80, marker='X', label='< 12 Meses', ax=ax)
 
+        # Plot 3: Promovidos (Verde)
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
                             color='#2ecc71', s=150, edgecolor='black', label='Promovidos', ax=ax)
             for line in range(0, promovidos.shape[0]):
                 ax.text(promovidos.Score_Tecnico.iloc[line]+0.05, promovidos.fit_cultural.iloc[line], 
                         f"ID {promovidos.matricula.iloc[line]}", horizontalalignment='left', size='small', color='black', weight='semibold')
-            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5)
+            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5, label='Corte Dinâmico')
 
         ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Régua ({fit_corte})')
         ax.legend(loc='lower left', frameon=True)
@@ -188,4 +193,4 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         else:
             st.warning("Ninguém elegível.")
 else:
-    st.info("Carregando...")
+    st.info("Carregando dados da API...")
