@@ -102,17 +102,6 @@ st.sidebar.markdown("""
     <a href="#insights" class="toc-link">5. Insights Gerenciais</a>
 </div>
 """, unsafe_allow_html=True)
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("### Configurações")
-BUDGET_TOTAL = st.sidebar.slider(
-    "Orçamento Disponível (R$)", 
-    min_value=1000.0, 
-    max_value=10000.0, 
-    value=3000.0, 
-    step=100.0
-)
-
 st.sidebar.markdown("""
 <div style="margin-top: 30px; font-size: 0.8rem; color: #484f58;">
     People Analytics © 2025
