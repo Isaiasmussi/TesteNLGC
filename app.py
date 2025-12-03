@@ -33,7 +33,6 @@ st.markdown("""
             font-size: 0.95rem; transition: color 0.2s;
         }
         .toc-link:hover { color: #58a6ff; }
-        .toc-active { color: #f0f6fc; font-weight: 500; border-left: 2px solid #58a6ff; padding-left: 10px; }
         
         /* Cards de Conteúdo (Quadro Transparente/Glassmorphism) */
         .dashboard-card {
@@ -45,6 +44,23 @@ st.markdown("""
             backdrop-filter: blur(5px);
         }
         
+        /* Mini Cards de Perfil */
+        .profile-card {
+            background-color: rgba(35, 134, 54, 0.1); /* Verde Sutil */
+            border: 1px solid rgba(46, 160, 67, 0.4);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .profile-id { color: #58a6ff; font-weight: bold; font-size: 1.2rem; }
+        .profile-role { color: #8b949e; font-size: 0.9rem; text-transform: uppercase; margin-bottom: 10px; }
+        .profile-badge { 
+            background-color: #238636; color: white; padding: 2px 8px; 
+            border-radius: 10px; font-size: 0.75rem; font-weight: bold;
+        }
+        .profile-reason { margin-top: 10px; font-size: 0.85rem; color: #c9d1d9; font-style: italic; }
+
         /* Títulos dentro dos cards */
         .card-title {
             color: #58a6ff; font-size: 1.1rem; font-weight: 600; margin-bottom: 10px;
@@ -61,9 +77,6 @@ st.markdown("""
         }
         label.metric-label { font-size: 0.8rem !important; color: #8b949e !important; text-transform: uppercase; }
         div.metric-value { font-size: 1.6rem !important; color: #f0f6fc !important; font-weight: 700; }
-
-        /* Separadores */
-        hr { border-color: #30363d; margin: 30px 0; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -92,7 +105,7 @@ def load_data():
 
 df_func, df_perf, df_sal = load_data()
 
-# --- ÍNDICE LATERAL (ESTILO COLAB) ---
+# --- ÍNDICE LATERAL ---
 st.sidebar.markdown("""
 <div class="toc-header">
     Índice 
@@ -101,7 +114,9 @@ st.sidebar.markdown("""
 <div style="margin-left: 5px;">
     <a href="#premissas" class="toc-link">1. Premissas & Metodologia</a>
     <a href="#dashboard" class="toc-link">2. Dashboard de Performance</a>
-    <a href="#insights" class="toc-link">3. Insights Gerenciais</a>
+    <a href="#orcamento" class="toc-link">3. Impacto Orçamentário</a>
+    <a href="#perfis" class="toc-link">4. Destaques da Promoção</a>
+    <a href="#insights" class="toc-link">5. Insights Gerenciais</a>
 </div>
 <div style="margin-top: 30px; font-size: 0.8rem; color: #484f58;">
     © 2025 People Analytics
@@ -110,7 +125,7 @@ st.sidebar.markdown("""
 
 if df_func is not None and not df_func.empty and not df_perf.empty:
 
-    # --- PROCESSAMENTO (VALORES FIXOS: FIT 8.0, BUDGET 3000) ---
+    # --- PROCESSAMENTO ---
     FIT_CORTE = 8.0
     BUDGET_TOTAL = 3000.0
 
@@ -191,7 +206,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     
     st.title("People Analytics | Matriz de Decisão")
     
-    # SEÇÃO 1: PREMISSAS (EM CARD)
+    # SEÇÃO 1: PREMISSAS
     st.markdown('<div id="premissas"></div>', unsafe_allow_html=True)
     st.markdown("""
     <div class="dashboard-card">
@@ -212,7 +227,7 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     </div>
     """, unsafe_allow_html=True)
 
-    # SEÇÃO 2: DASHBOARD (GRÁFICO + TABELA)
+    # SEÇÃO 2: DASHBOARD
     st.markdown('<div id="dashboard"></div>', unsafe_allow_html=True)
     
     # KPIs
@@ -230,11 +245,9 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     with col_chart:
         st.markdown("##### Performance x Cultura")
         fig, ax = plt.subplots(figsize=(10, 6))
-        # Ajustando tema escuro para o gráfico combinar com o dashboard
         fig.patch.set_facecolor('#0e1117')
         ax.set_facecolor('#0e1117')
         
-        # Cores customizadas para tema escuro
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
                         x='Score_Tecnico', y='fit_cultural', color='#30363d', alpha=0.6, s=60, label='Outros', ax=ax)
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
@@ -250,7 +263,6 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
 
         ax.axhline(y=FIT_CORTE, color='#da3633', linestyle='--', alpha=0.6, label=f'Régua Fit ({FIT_CORTE})')
         
-        # Ajuste de eixos para tema escuro
         ax.tick_params(colors='#8b949e')
         ax.xaxis.label.set_color('#8b949e')
         ax.yaxis.label.set_color('#8b949e')
@@ -276,7 +288,82 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         else:
             st.warning("Nenhum colaborador elegível.")
 
-    # SEÇÃO 3: INSIGHTS (EM CARD)
+    # SEÇÃO 3: IMPACTO ORÇAMENTÁRIO (NOVO)
+    st.markdown('<div id="orcamento"></div>', unsafe_allow_html=True)
+    if not promovidos.empty:
+        custo_medio = promovidos['Custo_Aumento'].mean()
+        score_medio = promovidos['Score_Tecnico'].mean()
+        
+        st.markdown(f"""
+        <div class="dashboard-card">
+            <div class="card-title">3. Impacto Orçamentário & Eficiência</div>
+            <div style="display: flex; justify-content: space-around; margin-top: 10px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: #8b949e;">Orçamento Total</div>
+                    <div style="font-size: 1.4rem; font-weight: bold; color: #58a6ff;">R$ {BUDGET_TOTAL:.2f}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: #8b949e;">Custo Médio / Promoção</div>
+                    <div style="font-size: 1.4rem; font-weight: bold; color: #f0f6fc;">R$ {custo_medio:.2f}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: #8b949e;">Score Médio "Comprado"</div>
+                    <div style="font-size: 1.4rem; font-weight: bold; color: #2ecc71;">{score_medio:.2f}</div>
+                </div>
+            </div>
+            <div class="card-text" style="margin-top: 20px; text-align: center;">
+                O ciclo atual priorizou candidatos que entregam, em média, um score de <strong>{score_medio:.2f}</strong>. 
+                Isso garante que cada real investido está indo para perfis de alta tração e alinhamento cultural.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # SEÇÃO 4: PERFIS DOS PROMOVIDOS (NOVO - GRID DINÂMICO)
+    st.markdown('<div id="perfis"></div>', unsafe_allow_html=True)
+    st.markdown("### Destaques da Promoção (Top Talent)")
+    
+    if not promovidos.empty:
+        top_6 = promovidos.head(6)
+        cols = st.columns(3) # Grid de 3 colunas
+        
+        for idx, (i, row) in enumerate(top_6.iterrows()):
+            # Lógica das "Badges" automáticas
+            badges = []
+            reason = "Performance equilibrada em todos os pilares."
+            
+            if row['tarefas'] > df_elegiveis['tarefas'].quantile(0.8): 
+                badges.append("🏆 Alta Tração")
+                reason = "Grande volume de entregas com consistência."
+            if row['qualidade'] >= 9.0: 
+                badges.append("⭐ Qualidade Extrema")
+                reason = "Excelência reconhecida na satisfação do cliente."
+            if row['reincidencia'] < 0.05: 
+                badges.append("🎯 Zero Erros")
+                reason = "Eficiência cirúrgica, sem retrabalho."
+            if row['avaliacao_gestor'] >= 9.0:
+                badges.append("🤝 Liderança")
+                reason = "Forte perfil comportamental e de liderança."
+            if not badges: badges.append("✅ Consistente")
+            
+            badges_html = " ".join([f'<span class="profile-badge">{b}</span>' for b in badges])
+            
+            with cols[idx % 3]:
+                st.markdown(f"""
+                <div class="profile-card">
+                    <div class="profile-id">ID {row['matricula']}</div>
+                    <div class="profile-role">Promovido a {row['Proximo_Nivel']}</div>
+                    <div>{badges_html}</div>
+                    <div class="profile-reason">"{reason}"</div>
+                    <div style="margin-top: 10px; font-size: 0.8rem; color: #8b949e;">
+                        Score Final: <strong>{row['Score_Tecnico']:.2f}</strong>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        if len(promovidos) > 6:
+            st.caption(f"...e mais {len(promovidos)-6} colaboradores na lista completa acima.")
+
+    # SEÇÃO 5: INSIGHTS
     st.markdown('<div id="insights"></div>', unsafe_allow_html=True)
     
     if not promovidos.empty:
@@ -286,15 +373,12 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         
         st.markdown(f"""
         <div class="dashboard-card">
-            <div class="card-title">3. Insights Gerenciais</div>
+            <div class="card-title">5. Insights Gerenciais</div>
             <div class="card-text">
-                Com base nos dados processados:<br><br>
-                <strong>🏆 Destaque do Ciclo: Colaborador {top_performer['matricula']}</strong><br>
-                Atingiu o maior Score Global (<strong>{top_performer['Score_Tecnico']:.2f}</strong>), combinando um volume alto de <strong>{top_performer['tarefas']:.0f} tarefas</strong> com uma taxa de erro mínima (<strong>{top_performer['reincidencia']:.2f}%</strong>).<br><br>
                 <strong>📈 Elevação da Barra Técnica</strong><br>
                 O grupo de promovidos performa <strong>{((avg_score_prom/avg_score_geral)-1)*100:.1f}% acima</strong> da média geral da equipe.<br><br>
-                <strong>⚠️ Pipeline de Talentos</strong><br>
-                Existem <strong>{len(df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'])} colaboradores</strong> com performance de promoção, mas retidos pelo tempo de casa (pontos amarelos no gráfico). Acompanhar para o próximo ciclo.
+                <strong>⚠️ Pipeline de Talentos (Retenção)</strong><br>
+                Existem <strong>{len(df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'])} colaboradores</strong> (marcados em amarelo no gráfico) que já possuem performance de promoção, mas foram retidos pela regra de 12 meses. É crucial dar feedback de retenção para não perder esses talentos para o mercado.
             </div>
         </div>
         """, unsafe_allow_html=True)
