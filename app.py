@@ -22,7 +22,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. CARREGAMENTO E TRATAMENTO INICIAL ---
 @st.cache_data(ttl=600)
 def load_data():
     api_url = "https://script.google.com/macros/s/AKfycbxHG51T-YJi8XpY1ZFmJ-YvNHO_OLxNA6TGp6BnUY_R539HsQW7bVpEth23TShRdqV1/exec"
@@ -49,13 +48,11 @@ df_func, df_perf, df_sal = load_data()
 
 if df_func is not None and not df_func.empty and not df_perf.empty:
 
-    # --- GARANTIA DE MERGE (Matrículas como Texto) ---
     df_func['matricula'] = df_func['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     df_perf['matricula'] = df_perf['matricula'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     
     df = pd.merge(df_func, df_perf, on='matricula', how='inner')
     
-    # --- 2. ENGENHARIA DE SALÁRIOS ---
     if not df_sal.empty:
         df_sal['Nível de Cargo'] = df_sal['Nível de Cargo'].astype(str).str.strip()
         df['Nível de Cargo'] = df['Nível de Cargo'].astype(str).str.strip()
@@ -78,7 +75,6 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         st.warning("Base vazia após cálculo salarial. Verifique os nomes dos cargos.")
         st.stop()
 
-    # --- 3. ENGENHARIA DO SCORE TÉCNICO ---
     cols_calc = ['tarefas', 'qualidade', 'reincidencia', 'fit_cultural']
     for col in cols_calc:
         if col in df_elegiveis.columns:
@@ -98,7 +94,6 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                                     (df_elegiveis['tarefas_n'] * 0.3) + \
                                     (df_elegiveis['reincidencia_score_n'] * 0.3)
 
-    # --- 4. DASHBOARD ---
     st.sidebar.title("Painel de Controle")
     budget_total = st.sidebar.number_input("Budget (R$)", value=3000.0, step=100.0)
     fit_corte = st.sidebar.slider("Corte Fit Cultural", 0.0, 10.0, 8.0)
@@ -126,43 +121,55 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     col_chart, col_table = st.columns([1.8, 1])
 
     with col_chart:
-        fig, ax = plt.subplots(figsize=(10, 6))
+        # Aumentei a altura para evitar o achatamento visual
+        fig, ax = plt.subplots(figsize=(12, 7))
         sns.set_style("whitegrid")
 
+        # Plot dos não promovidos
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] != 'PROMOVIDO'], 
                         x='Score_Tecnico', y='fit_cultural', 
-                        color='grey', alpha=0.3, s=60, label='Elegíveis/Resto')
+                        color='grey', alpha=0.3, s=60, label='Elegíveis/Resto', ax=ax)
 
+        # Plot dos promovidos (destaque)
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
-                            color='#2ecc71', s=150, edgecolor='black', label='Promover (Top Pick)')
+                            color='#2ecc71', s=150, edgecolor='black', label='Promover (Top Pick)', ax=ax)
 
             for line in range(0, promovidos.shape[0]):
-                ax.text(promovidos.Score_Tecnico.iloc[line]+0.1,
-                        promovidos.fit_cultural.iloc[line],
-                        f"ID {promovidos.matricula.iloc[line]}",
+                ax.text(promovidos.Score_Tecnico.iloc[line]+0.05, 
+                        promovidos.fit_cultural.iloc[line], 
+                        f"ID {promovidos.matricula.iloc[line]}", 
                         horizontalalignment='left', size='small', color='black', weight='semibold')
             
-            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5, label='Corte Técnico Dinâmico')
+            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='b', linestyle='--', alpha=0.5, label='Corte Técnico')
 
         ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Corte Cultural ({fit_corte})')
-        ax.legend(loc='lower left')
-        st.pyplot(fig)
+        
+        # Ajuste da legenda para não cobrir os dados
+        ax.legend(loc='lower left', frameon=True)
+        
+        # Labels mais claros
+        ax.set_xlabel("Score Técnico (0-10)", fontsize=10)
+        ax.set_ylabel("Fit Cultural (0-10)", fontsize=10)
+
+        # Garante que tudo caiba na figura antes de enviar pro Streamlit
+        fig.tight_layout()
+        
+        # use_container_width=True é essencial para layouts wide
+        st.pyplot(fig, use_container_width=True)
 
     with col_table:
         st.markdown("#### Lista de Promoção")
         if not promovidos.empty:
-            # CORREÇÃO AQUI: Removida a formatação da Matrícula pois ela agora é texto
             st.dataframe(
                 promovidos[['matricula', 'Nível de Cargo', 'Proximo_Nivel', 'Score_Tecnico', 'Custo_Aumento']]
                 .style.format({
                     'Score_Tecnico': '{:.2f}', 
                     'Custo_Aumento': 'R$ {:.2f}'
-                    # 'matricula': '{:.0f}'  <-- ESTA LINHA CAUSAVA O ERRO
                 })
                 .background_gradient(subset=['Score_Tecnico'], cmap='Greens'),
                 use_container_width=True,
-                height=400,
+                height=450, # Aumentei um pouco para alinhar com o gráfico
                 hide_index=True
             )
         else:
