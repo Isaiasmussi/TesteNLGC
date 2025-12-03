@@ -56,14 +56,13 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     
     df = pd.merge(df_func, df_perf, on='matricula', how='inner')
     
-    # --- CÁLCULO DE TEMPO DE CASA (BLINDADO) ---
+    # --- CÁLCULO DE TEMPO DE CASA ---
     col_admissao = 'Data de Admissão'
     if col_admissao in df.columns:
         df[col_admissao] = pd.to_datetime(df[col_admissao], errors='coerce')
         agora = pd.Timestamp.now()
-        # Cálculo seguro: Dias totais / média de dias no mês (30.44)
         df['dias_casa'] = (agora - df[col_admissao]).dt.days
-        df['Meses_Casa'] = (df['dias_casa'] / 30.44).fillna(0).astype(int)
+        df['Meses_Casa'] = (df['dias_casa'] / 30.0).fillna(0).astype(int)
     else:
         st.error(f"Coluna '{col_admissao}' não encontrada.")
         df['Meses_Casa'] = 0
@@ -73,20 +72,16 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         df_sal['Nível de Cargo'] = df_sal['Nível de Cargo'].astype(str).str.strip()
         df['Nível de Cargo'] = df['Nível de Cargo'].astype(str).str.strip()
         
-        # Limpeza de Moeda (R$, Ponto, Vírgula)
         if df_sal['Valor'].dtype == 'O': 
             df_sal['Valor'] = df_sal['Valor'].astype(str).str.replace('R$', '', regex=False)
-            df_sal['Valor'] = df_sal['Valor'].str.replace('.', '', regex=False) # Tira ponto de milhar
-            df_sal['Valor'] = df_sal['Valor'].str.replace(',', '.', regex=False) # Troca vírgula decimal
+            df_sal['Valor'] = df_sal['Valor'].str.replace('.', '', regex=False) 
+            df_sal['Valor'] = df_sal['Valor'].str.replace(',', '.', regex=False) 
             
         df_sal['Valor'] = pd.to_numeric(df_sal['Valor'], errors='coerce')
-        
-        # Cria mapa salarial 
         df_sal_map = df_sal.groupby('Nível de Cargo')['Valor'].mean().to_dict()
         
         df['Salario_Atual'] = df['Nível de Cargo'].map(df_sal_map)
         
-        # Mapa de Promoção
         mapa_promocao = {'I': 'II', 'II': 'III', 'III': 'IV', 'IV': 'TETO'}
         
         df['Proximo_Nivel'] = df['Nível de Cargo'].map(mapa_promocao)
@@ -99,38 +94,43 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         st.stop()
 
     if df_elegiveis.empty:
-        st.warning("⚠️ Base vazia. Verifique se a coluna de VALOR na tabela salarial tem números válidos.")
+        st.warning("⚠️ Base vazia. Verifique números na tabela salarial.")
         st.stop()
 
-    # --- 3. SCORE TÉCNICO (40/30/30) ---
-    cols_calc = ['tarefas', 'qualidade', 'reincidencia', 'fit_cultural']
+    # --- 3. SCORE TÉCNICO (NOVA LÓGICA) ---
+    # Removido 'tarefas', adicionado 'avaliacao_gestor'
+    cols_calc = ['avaliacao_gestor', 'qualidade', 'reincidencia', 'fit_cultural']
+    
     for col in cols_calc:
         if col in df_elegiveis.columns:
             df_elegiveis[col] = df_elegiveis[col].astype(str).str.replace(',', '.')
             df_elegiveis[col] = pd.to_numeric(df_elegiveis[col], errors='coerce').fillna(0)
-
+    
     scaler = MinMaxScaler(feature_range=(0, 10))
     
-    # Inversão: Multiplicar por -1 mantém a relação ordinal correta para o Scaler
-    # (0 vira 0, 10 vira -10. O scaler bota 0 como nota 10 e -10 como nota 0)
+    # Inversão Reincidência
     df_elegiveis['reincidencia_score'] = df_elegiveis['reincidencia'] * -1 
 
-    cols_norm = ['tarefas', 'qualidade', 'reincidencia_score']
-    dados_norm = scaler.fit_transform(df_elegiveis[cols_norm])
-    df_norm = pd.DataFrame(dados_norm, columns=[c+'_n' for c in cols_norm], index=df_elegiveis.index)
+    # Normalização
+    cols_norm_input = ['avaliacao_gestor', 'qualidade', 'reincidencia_score']
+    cols_norm_output = ['avaliacao_gestor_n', 'qualidade_n', 'reincidencia_score_n']
+    
+    dados_norm = scaler.fit_transform(df_elegiveis[cols_norm_input])
+    df_norm = pd.DataFrame(dados_norm, columns=cols_norm_output, index=df_elegiveis.index)
     df_elegiveis = pd.concat([df_elegiveis, df_norm], axis=1)
 
-    # PESOS (Idêntico ao teu script)
+    # Cálculo Score (40% Quali / 30% Gestor / 30% Reincidência)
     df_elegiveis['Score_Tecnico'] = (df_elegiveis['qualidade_n'] * 0.40) + \
-                                    (df_elegiveis['tarefas_n'] * 0.30) + \
+                                    (df_elegiveis['avaliacao_gestor_n'] * 0.30) + \
                                     (df_elegiveis['reincidencia_score_n'] * 0.30)
 
     # --- 4. DASHBOARD ---
     st.sidebar.title("Painel de Controle")
     budget_total = st.sidebar.number_input("Budget (R$)", value=3000.0, step=100.0)
+    
+    # Régua Cultural (Gatekeeper)
     fit_corte = st.sidebar.slider("Régua Fit Cultural", 8.0, 10.0, 8.0) 
 
-    # FILTRO DUPLO: Meses >= 12 E Fit >= Corte
     mask_promocao = (
         (df_elegiveis['fit_cultural'] >= fit_corte) & 
         (df_elegiveis['Meses_Casa'] >= 12)
@@ -162,15 +162,13 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
         fig, ax = plt.subplots(figsize=(12, 7))
         sns.set_style("whitegrid")
 
-        # Plot 1: Não Promovidos (Cinza)
+        # Plots
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
                         x='Score_Tecnico', y='fit_cultural', color='grey', alpha=0.3, s=60, label='Outros', ax=ax)
         
-        # Plot 2: Maturação (Laranja) - Quem tem score mas tem pouco tempo
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
                         x='Score_Tecnico', y='fit_cultural', color='orange', alpha=0.5, s=80, marker='X', label='< 12 Meses', ax=ax)
 
-        # Plot 3: Promovidos (Verde)
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
                             color='#2ecc71', s=150, edgecolor='black', label='Promovidos', ax=ax)
@@ -181,8 +179,9 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
 
         ax.axhline(y=fit_corte, color='r', linestyle='--', alpha=0.5, label=f'Régua ({fit_corte})')
         ax.legend(loc='lower left', frameon=True)
-        ax.set_xlabel("Score Técnico (0-10)")
-        ax.set_ylabel("Fit Cultural (0-10)")
+        # Atualizei o label do eixo X
+        ax.set_xlabel("Score Técnico (Qualidade + Gestor + Baixa Reincidência)")
+        ax.set_ylabel("Fit Cultural (Avaliação Gestor)")
         fig.tight_layout()
         st.pyplot(fig, use_container_width=True)
 
