@@ -10,7 +10,6 @@ from datetime import datetime
 
 st.set_page_config(page_title="People Analytics - Assistente de Suporte", layout="wide", initial_sidebar_state="expanded")
 
-# --- ESTILOS CSS ADAPTATIVOS ---
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
@@ -28,7 +27,7 @@ st.markdown("""
         }
         .toc-link {
             display: block; padding: 8px 0; color: #8b949e; text-decoration: none;
-            font-size: 0.95rem; transition: color 0.2s;
+            font-size: 0.9rem; transition: color 0.2s;
         }
         .toc-link:hover { color: #58a6ff; font-weight: bold; }
         
@@ -38,6 +37,7 @@ st.markdown("""
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 20px;
+            backdrop-filter: blur(5px);
         }
         
         .profile-card {
@@ -100,11 +100,11 @@ st.sidebar.markdown("""
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3zM3 9h18M9 21V9"/></svg>
 </div>
 <div style="margin-left: 5px;">
-    <a href="#premissas" class="toc-link">#1.</a>
-    <a href="#dashboard" class="toc-link">#2.</a>
-    <a href="#orcamento" class="toc-link">#3.</a>
-    <a href="#perfis" class="toc-link">#4.</a>
-    <a href="#insights" class="toc-link">#5.</a>
+    <a href="#premissas" class="toc-link">1. Premissas & Metodologia</a>
+    <a href="#dashboard" class="toc-link">2. Dashboard de Performance</a>
+    <a href="#orcamento" class="toc-link">3. Impacto Orçamentário</a>
+    <a href="#perfis" class="toc-link">4. Destaques da Promoção</a>
+    <a href="#insights" class="toc-link">5. Insights Gerenciais</a>
 </div>
 """, unsafe_allow_html=True)
 
