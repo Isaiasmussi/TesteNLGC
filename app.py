@@ -9,60 +9,72 @@ from datetime import datetime
 
 st.set_page_config(page_title="People Analytics - Assistente de Suporte", layout="wide", initial_sidebar_state="expanded")
 
+# --- ESTILOS CSS ADAPTATIVOS (CLARO/ESCURO) ---
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
-        html, body, [class*="css"]  { font-family: 'Roboto', sans-serif; color: #e0e0e0; background-color: #0e1117; }
         
+        /* Fontes globais - Usa a cor de texto padrão do tema atual */
+        html, body, [class*="css"]  { 
+            font-family: 'Roboto', sans-serif; 
+            color: var(--text-color); 
+        }
+        
+        /* Ajuste de espaçamento */
         .block-container { padding-top: 1rem; padding-bottom: 5rem; }
 
-        [data-testid="stSidebar"] {
-            background-color: #161b22;
-            border-right: 1px solid #30363d;
-        }
-        .toc-header {
-            font-size: 1.2rem; font-weight: 700; color: #f0f6fc; margin-bottom: 1rem;
-            display: flex; align-items: center; justify-content: space-between;
-        }
+        /* Links do Índice - Cor primária do tema */
         .toc-link {
-            display: block; padding: 6px 0; color: #8b949e; text-decoration: none;
-            font-size: 0.9rem; transition: color 0.2s;
+            display: block; padding: 6px 0; color: var(--text-color); text-decoration: none;
+            font-size: 0.9rem; transition: color 0.2s; opacity: 0.8;
         }
-        .toc-link:hover { color: #58a6ff; font-weight: 500; }
+        .toc-link:hover { color: var(--primary-color); font-weight: 500; opacity: 1.0; }
         
+        /* Cards de Conteúdo: Usa a cor de fundo secundária do tema (cinza claro no light, cinza escuro no dark) */
         .dashboard-card {
-            background-color: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background-color: var(--secondary-background-color);
+            border: 1px solid rgba(128, 128, 128, 0.2);
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 20px;
-            backdrop-filter: blur(5px);
         }
         
+        /* Mini Cards de Perfil */
         .profile-card {
-            background-color: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background-color: var(--background-color);
+            border: 1px solid rgba(128, 128, 128, 0.2);
             border-radius: 6px;
             padding: 20px;
             margin-bottom: 15px;
             text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
-        .profile-id { color: #58a6ff; font-weight: bold; font-size: 1.1rem; }
-        .profile-role { color: #8b949e; font-size: 0.85rem; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 0.5px;}
+        .profile-id { color: var(--primary-color); font-weight: bold; font-size: 1.1rem; }
+        .profile-role { color: var(--text-color); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 0.5px; opacity: 0.7; }
         
+        /* Títulos */
         .card-title {
-            color: #58a6ff; font-size: 1.1rem; font-weight: 600; margin-bottom: 10px;
+            color: var(--primary-color); font-size: 1.1rem; font-weight: 600; margin-bottom: 10px;
             text-transform: uppercase; letter-spacing: 1px;
         }
         
-        .card-text { font-size: 0.95rem; line-height: 1.6; color: #c9d1d9; }
+        /* Texto corrido */
+        .card-text { font-size: 0.95rem; line-height: 1.6; color: var(--text-color); }
         
+        /* Métricas (KPIs) */
         div.metric-container {
-            background-color: #0d1117; border: 1px solid #30363d; padding: 15px;
+            background-color: var(--secondary-background-color); 
+            border: 1px solid rgba(128, 128, 128, 0.2); 
+            padding: 15px;
             border-radius: 6px; text-align: center;
         }
-        label.metric-label { font-size: 0.8rem !important; color: #8b949e !important; text-transform: uppercase; }
-        div.metric-value { font-size: 1.6rem !important; color: #f0f6fc !important; font-weight: 700; }
+        label.metric-label { font-size: 0.8rem !important; color: var(--text-color) !important; opacity: 0.7; text-transform: uppercase; }
+        div.metric-value { font-size: 1.6rem !important; color: var(--primary-color) !important; font-weight: 700; }
+        
+        /* Ajuste fino para gráficos */
+        [data-testid="stSidebar"] {
+            border-right: 1px solid rgba(128, 128, 128, 0.2);
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -91,20 +103,18 @@ def load_data():
 df_func, df_perf, df_sal = load_data()
 
 st.sidebar.markdown("""
-<div class="toc-header">
-    Índice
-</div>
+<div style="margin-bottom: 1rem; font-weight: bold; font-size: 1.1rem;">Índice</div>
 <div style="margin-left: 5px;">
-    <a href="#premissas" class="toc-link">1. Premissas & Metodologia</a>
-    <a href="#dashboard" class="toc-link">2. Dashboard de Performance</a>
-    <a href="#orcamento" class="toc-link">3. Impacto Orçamentário</a>
-    <a href="#perfis" class="toc-link">4. Destaques da Promoção</a>
-    <a href="#insights" class="toc-link">5. Insights Gerenciais</a>
+    <a href="#premissas" class="toc-link">#1. Premissas & Metodologia</a>
+    <a href="#dashboard" class="toc-link">#2. Dashboard de Performance</a>
+    <a href="#orcamento" class="toc-link">#3. Impacto Orçamentário</a>
+    <a href="#perfis" class="toc-link">#4. Destaques da Promoção</a>
+    <a href="#insights" class="toc-link">#5. Insights Gerenciais</a>
 </div>
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("""
-<div style="margin-top: 30px; font-size: 0.8rem; color: #484f58;">
+<div style="margin-top: 30px; font-size: 0.8rem; opacity: 0.6;">
     © 2025 People Analytics
 </div>
 """, unsafe_allow_html=True)
@@ -225,35 +235,49 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
     with col_chart:
         st.markdown("##### Performance x Cultura")
         fig, ax = plt.subplots(figsize=(10, 6))
-        fig.patch.set_facecolor('#0e1117')
-        ax.set_facecolor('#0e1117')
         
+        # Tema Transparente (Adapta ao Light/Dark do Streamlit)
+        fig.patch.set_facecolor('none')
+        ax.set_facecolor('none')
+        
+        # Cores Adaptativas (Usando Cinza para Outros que funciona em ambos)
         sns.scatterplot(data=df_elegiveis[~df_elegiveis['Status'].isin(['PROMOVIDO', 'Em Maturação (<12m)'])], 
-                        x='Score_Tecnico', y='fit_cultural', color='#ffffff', alpha=0.2, s=60, label='Outros', ax=ax)
+                        x='Score_Tecnico', y='fit_cultural', color='gray', alpha=0.3, s=60, label='Outros', ax=ax)
         
         sns.scatterplot(data=df_elegiveis[df_elegiveis['Status'] == 'Em Maturação (<12m)'], 
-                        x='Score_Tecnico', y='fit_cultural', color='#d29922', alpha=0.7, s=80, marker='X', label='< 12 Meses', ax=ax)
+                        x='Score_Tecnico', y='fit_cultural', color='#f39c12', alpha=0.7, s=80, marker='X', label='< 12 Meses', ax=ax)
         
         if not promovidos.empty:
             sns.scatterplot(data=promovidos, x='Score_Tecnico', y='fit_cultural', 
-                            color='#238636', s=150, edgecolor='#f0f6fc', linewidth=1.5, label='Promovidos', ax=ax)
+                            color='#2ecc71', s=150, edgecolor='black', linewidth=1.0, label='Promovidos', ax=ax)
             for line in range(0, promovidos.shape[0]):
+                # Cor do texto do gráfico precisa de contraste. O padrão do matplotlib é preto.
+                # Para funcionar no dark, vamos forçar uma cor que funcione em ambos ou deixar o Streamlit gerenciar?
+                # Vamos usar um cinza escuro quase preto que é padrão, mas adicionar um contorno branco se possível?
+                # Simples: Manter padrão (preto) funciona bem no light. No dark, o fundo é escuro.
+                # Melhor: Usar a cor primária do Streamlit se possível, mas aqui no Python é difícil pegar.
+                # Solução Robusta: Texto Preto com contorno ou cor contrastante fixa.
+                # Vou usar PRETO para os labels dentro do gráfico pois as bolinhas verdes são claras.
                 ax.text(promovidos.Score_Tecnico.iloc[line]+0.08, promovidos.fit_cultural.iloc[line], 
-                        f"ID {promovidos.matricula.iloc[line]}", horizontalalignment='left', size='small', color='#f0f6fc', weight='bold')
-            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='#1f6feb', linestyle='--', alpha=0.6, label='Corte Dinâmico')
+                        f"ID {promovidos.matricula.iloc[line]}", horizontalalignment='left', size='small', color='black', weight='bold')
+            ax.axvline(x=promovidos['Score_Tecnico'].min(), color='#3498db', linestyle='--', alpha=0.6, label='Corte Dinâmico')
 
-        ax.axhline(y=FIT_CORTE, color='#da3633', linestyle='--', alpha=0.6, label=f'Régua Fit ({FIT_CORTE})')
+        ax.axhline(y=FIT_CORTE, color='#e74c3c', linestyle='--', alpha=0.6, label=f'Régua Fit ({FIT_CORTE})')
         
-        ax.tick_params(colors='#8b949e')
-        ax.xaxis.label.set_color('#8b949e')
-        ax.yaxis.label.set_color('#8b949e')
-        ax.spines['bottom'].set_color('#30363d')
-        ax.spines['top'].set_color('#30363d') 
-        ax.spines['right'].set_color('#30363d')
-        ax.spines['left'].set_color('#30363d')
+        # Ajuste de eixos para usar cor padrão do tema (Transparente deixa o texto padrão do mpl visível)
+        # Mas no dark mode do Streamlit, o texto padrão do MPL (preto) some.
+        # Truque: Usar cor 'gray' para eixos/texto funciona razoavelmente em ambos.
+        ax.tick_params(colors='gray')
+        ax.xaxis.label.set_color('gray')
+        ax.yaxis.label.set_color('gray')
+        ax.spines['bottom'].set_color('gray')
+        ax.spines['top'].set_color('gray') 
+        ax.spines['right'].set_color('gray')
+        ax.spines['left'].set_color('gray')
 
-        legend = ax.legend(loc='lower left', frameon=True, facecolor='#161b22', edgecolor='#30363d')
-        plt.setp(legend.get_texts(), color='#8b949e')
+        # Legenda com fundo semi-transparente
+        legend = ax.legend(loc='lower left', frameon=True, facecolor='white', framealpha=0.2, edgecolor='gray')
+        plt.setp(legend.get_texts(), color='gray')
         
         ax.set_xlabel("Score Técnico")
         ax.set_ylabel("Fit Cultural")
@@ -279,15 +303,15 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
             <div class="card-title">3. Impacto Orçamentário & Eficiência</div>
             <div style="display: flex; justify-content: space-around; margin-top: 10px;">
                 <div style="text-align: center;">
-                    <div style="font-size: 0.9rem; color: #8b949e;">Orçamento Total</div>
-                    <div style="font-size: 1.4rem; font-weight: bold; color: #58a6ff;">R$ {BUDGET_TOTAL:.2f}</div>
+                    <div style="font-size: 0.9rem; opacity: 0.8;">Orçamento Total</div>
+                    <div style="font-size: 1.4rem; font-weight: bold; color: var(--primary-color);">R$ {BUDGET_TOTAL:.2f}</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="font-size: 0.9rem; color: #8b949e;">Custo Médio / Promoção</div>
-                    <div style="font-size: 1.4rem; font-weight: bold; color: #f0f6fc;">R$ {custo_medio:.2f}</div>
+                    <div style="font-size: 0.9rem; opacity: 0.8;">Custo Médio / Promoção</div>
+                    <div style="font-size: 1.4rem; font-weight: bold;">R$ {custo_medio:.2f}</div>
                 </div>
                 <div style="text-align: center;">
-                    <div style="font-size: 0.9rem; color: #8b949e;">Score Médio "Comprado"</div>
+                    <div style="font-size: 0.9rem; opacity: 0.8;">Score Médio "Comprado"</div>
                     <div style="font-size: 1.4rem; font-weight: bold; color: #2ecc71;">{score_medio:.2f}</div>
                 </div>
             </div>
@@ -325,11 +349,11 @@ if df_func is not None and not df_func.empty and not df_perf.empty:
                 <div class="profile-card">
                     <div class="profile-id">ID {row['matricula']}</div>
                     <div class="profile-role">Promovido a {row['Proximo_Nivel']}</div>
-                    <div style="margin: 15px 0; border-top: 1px solid #30363d;"></div>
-                    <div style="font-size: 0.85rem; color: #c9d1d9; text-align: left;">
+                    <div style="margin: 15px 0; border-top: 1px solid rgba(128,128,128,0.2);"></div>
+                    <div style="font-size: 0.85rem; text-align: left; opacity: 0.9;">
                         <strong>Resumo:</strong><br>{resumo_perfil}
                     </div>
-                    <div style="margin-top: 15px; font-size: 0.8rem; color: #8b949e; text-align: right;">
+                    <div style="margin-top: 15px; font-size: 0.8rem; opacity: 0.7; text-align: right;">
                         Score Final: <strong>{row['Score_Tecnico']:.2f}</strong>
                     </div>
                 </div>
