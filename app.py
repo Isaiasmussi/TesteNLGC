@@ -21,14 +21,14 @@ st.markdown("""
             border-right: 1px solid #30363d;
         }
         .toc-header {
-            font-size: 1.5rem; font-weight: 700; color: #f0f6fc; margin-bottom: 1rem;
+            font-size: 1.2rem; font-weight: 700; color: #f0f6fc; margin-bottom: 1rem;
             display: flex; align-items: center; justify-content: space-between;
         }
         .toc-link {
-            display: block; padding: 8px 0; color: #8b949e; text-decoration: none;
-            font-size: 0.95rem; transition: color 0.2s;
+            display: block; padding: 6px 0; color: #8b949e; text-decoration: none;
+            font-size: 0.9rem; transition: color 0.2s;
         }
-        .toc-link:hover { color: #58a6ff; font-weight: bold; }
+        .toc-link:hover { color: #58a6ff; font-weight: 500; }
         
         .dashboard-card {
             background-color: rgba(255, 255, 255, 0.03);
@@ -92,15 +92,14 @@ df_func, df_perf, df_sal = load_data()
 
 st.sidebar.markdown("""
 <div class="toc-header">
-    Índice 
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3zM3 9h18M9 21V9"/></svg>
+    Índice
 </div>
 <div style="margin-left: 5px;">
-    <a href="#premissas" class="toc-link">#1.</a>
-    <a href="#dashboard" class="toc-link">#2.</a>
-    <a href="#orcamento" class="toc-link">#3.</a>
-    <a href="#perfis" class="toc-link">#4.</a>
-    <a href="#insights" class="toc-link">#5.</a>
+    <a href="#premissas" class="toc-link">1. Premissas & Metodologia</a>
+    <a href="#dashboard" class="toc-link">2. Dashboard de Performance</a>
+    <a href="#orcamento" class="toc-link">3. Impacto Orçamentário</a>
+    <a href="#perfis" class="toc-link">4. Destaques da Promoção</a>
+    <a href="#insights" class="toc-link">5. Insights Gerenciais</a>
 </div>
 """, unsafe_allow_html=True)
 
